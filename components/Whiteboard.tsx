@@ -138,6 +138,31 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       return { x: x * scale + cam.x, y: y * scale + cam.y };
   };
 
+  const snapToAngle = (p0: Point, p1: Point): Point => {
+      const dx = p1.x - p0.x;
+      const dy = p1.y - p0.y;
+      if (dx === 0 && dy === 0) return p1;
+
+      // Angle in degrees from -180 to 180
+      const deg = Math.atan2(dy, dx) * (180 / Math.PI);
+      const absDeg = Math.abs(deg); // 0 to 180
+
+      // Horizontal snapping: within 10 degrees of 0° or 180°
+      const isHorizontal = absDeg <= 10 || absDeg >= 170;
+
+      // Vertical snapping: within 10 degrees of 90° (80° to 100°)
+      const isVertical = absDeg >= 80 && absDeg <= 100;
+
+      if (isHorizontal) {
+          return { x: p1.x, y: p0.y };
+      } else if (isVertical) {
+          return { x: p0.x, y: p1.y };
+      }
+
+      // Outside horizontal/vertical threshold, keep free cursor angle
+      return p1;
+  };
+
   // --- Internal Rendering for Export/Full Snapshot ---
   const drawStrokeOnCtx = (ctx: CanvasRenderingContext2D, stroke: Stroke) => {
     if (stroke.tool === 'image' && stroke.imageUrl) {
@@ -667,8 +692,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         if (e.cancelable) e.preventDefault();
         const worldPos = screenToWorld(coords.x, coords.y);
         const isShift = (e as React.MouseEvent).shiftKey;
+        const startPos = currentStrokeRef.current.points[0];
         if (currentStrokeRef.current.tool === 'dotted-line' || (currentStrokeRef.current.tool === 'pen' && isShift)) {
-             currentStrokeRef.current.points = [currentStrokeRef.current.points[0], worldPos];
+             const targetPos = isShift ? snapToAngle(startPos, worldPos) : worldPos;
+             currentStrokeRef.current.points = [startPos, targetPos];
         } else currentStrokeRef.current.points.push(worldPos);
         render();
     }
