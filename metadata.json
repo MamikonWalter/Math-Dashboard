@@ -1,0 +1,6 @@
+{
+  "name": "Mathters Whiteboard",
+  "description": "A collaborative-style drawing board featuring pen tools, color selection, and erasing capabilities with a clean, modern UI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
