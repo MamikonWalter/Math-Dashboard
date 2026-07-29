@@ -292,6 +292,9 @@ const App: React.FC = () => {
     setIs3DPanelOpen(false);
   }, []);
 
+  const lastCopySourceRef = useRef<'board' | 'external'>('external');
+  const isBoardCopyingRef = useRef<boolean>(false);
+
   // Keyboard Shortcuts (Layout-Independent)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -305,8 +308,16 @@ const App: React.FC = () => {
           switch (code) {
               case 'KeyZ': e.preventDefault(); if (e.shiftKey) handleRedo(); else handleUndo(); break;
               case 'KeyY': e.preventDefault(); handleRedo(); break;
-              case 'KeyC': whiteboardRef.current?.copySelection(); break;
-              case 'KeyV': whiteboardRef.current?.pasteSelection(); break;
+              case 'KeyC': {
+                  const copied = whiteboardRef.current?.copySelection();
+                  if (copied) {
+                      lastCopySourceRef.current = 'board';
+                      isBoardCopyingRef.current = true;
+                      setTimeout(() => { isBoardCopyingRef.current = false; }, 200);
+                  }
+                  break;
+              }
+              // Ctrl/Cmd + V is handled cleanly by the unified paste listener below
           }
       } else {
           switch (code) {
@@ -327,27 +338,61 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo, handleSetTool, handleZoomIn, handleZoomOut]);
 
-  // Handle Global Image Paste
+  // Handle Global Paste and Copy Source Tracking
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
         const items = e.clipboardData?.items;
-        if (!items) return;
-        for (const item of items) {
-            if (item.type.indexOf('image') !== -1) {
-                const file = item.getAsFile();
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        const dataUrl = event.target?.result as string;
-                        whiteboardRef.current?.addImage(dataUrl, window.innerWidth / 2, window.innerHeight / 2);
-                    };
-                    reader.readAsDataURL(file);
+        let imageFile: File | null = null;
+        if (items) {
+            for (const item of items) {
+                if (item.type.indexOf('image') !== -1) {
+                    const file = item.getAsFile();
+                    if (file) {
+                        imageFile = file;
+                        break;
+                    }
                 }
             }
         }
+
+        if (imageFile && lastCopySourceRef.current === 'external') {
+            e.preventDefault();
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const dataUrl = event.target?.result as string;
+                whiteboardRef.current?.addImage(dataUrl, window.innerWidth / 2, window.innerHeight / 2);
+            };
+            reader.readAsDataURL(imageFile);
+            return;
+        }
+
+        if (lastCopySourceRef.current === 'board' || !imageFile) {
+            e.preventDefault();
+            whiteboardRef.current?.pasteSelection();
+        }
     };
+
+    const handleBlur = () => {
+        lastCopySourceRef.current = 'external';
+    };
+
+    const handleCopy = () => {
+        if (!isBoardCopyingRef.current) {
+            lastCopySourceRef.current = 'external';
+        }
+    };
+
     window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('copy', handleCopy);
+
+    return () => {
+        window.removeEventListener('paste', handlePaste);
+        window.removeEventListener('blur', handleBlur);
+        window.removeEventListener('copy', handleCopy);
+    };
   }, []);
 
   const handleClear = () => { if(window.confirm("Очистить доску?")) window.location.reload(); };

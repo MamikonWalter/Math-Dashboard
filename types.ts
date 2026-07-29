@@ -57,7 +57,7 @@ export interface WhiteboardHandle {
   restoreSnapshot: (data: WhiteboardData) => void;
   setZoom: (scale: number) => void;
   deleteSelection: () => void;
-  copySelection: () => void;
+  copySelection: () => boolean;
   pasteSelection: () => void;
   getCanvasImage: () => string | null;
   addImage: (imageUrl: string, screenX: number, screenY: number) => void;

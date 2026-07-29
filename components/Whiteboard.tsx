@@ -392,10 +392,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             render();
         }
     },
-    copySelection: () => {
-        if (selectedIndicesRef.current.size === 0) return;
+    copySelection: (): boolean => {
+        if (selectedIndicesRef.current.size === 0) return false;
         const selectedStrokes = strokesRef.current.filter((_, i) => selectedIndicesRef.current.has(i));
         clipboardRef.current = JSON.parse(JSON.stringify(selectedStrokes));
+        return true;
     },
     pasteSelection: () => {
         if (clipboardRef.current.length === 0) return;

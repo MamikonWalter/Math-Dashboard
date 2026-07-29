@@ -52,9 +52,8 @@ const Header: React.FC<HeaderProps> = ({ onClear, onSave, onOpen, onExport, onEx
   return (
     <div className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 px-4 flex items-center justify-between z-30 shadow-sm">
       <div className="flex items-center gap-4 pl-2">
-        <div className="flex items-center gap-0 select-none cursor-default" onClick={() => window.location.reload()}>
-          <span className="text-2xl font-black text-blue-600 tracking-tighter">Math</span>
-          <span className="text-2xl font-light text-gray-800 tracking-tighter italic">ters</span>
+        <div className="flex items-center gap-0 select-none cursor-pointer" onClick={() => window.location.reload()}>
+          <span className="text-2xl font-bold text-gray-900 tracking-tight">Mathters</span>
         </div>
 
         <div className="h-6 w-px bg-gray-300" />

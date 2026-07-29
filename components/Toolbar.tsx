@@ -62,22 +62,22 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
   return (
     <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20">
-      <div className="bg-white p-2 rounded-xl shadow-xl border border-gray-200 flex flex-col gap-1 items-center">
+      <div className="bg-white p-1.5 rounded-xl shadow-xl border border-gray-200 flex flex-col gap-0.5 items-center select-none">
         {mainTools.map((tool) => {
           const isActive = currentTool === tool.id;
           return (
             <button
               key={tool.id}
               onClick={() => setTool(tool.id as ToolType)}
-              className={`p-3 rounded-lg transition-all duration-200 group relative
+              className={`p-2 rounded-lg transition-all duration-200 group relative
                 ${isActive ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
               title={tool.label}
             >
               <tool.icon 
-                className={`w-6 h-6 ${isActive && (tool.id === 'pen' || tool.id === 'dotted-line' || tool.id === 'text') ? 'fill-current' : ''}`} 
+                className={`w-4 h-4 ${isActive && (tool.id === 'pen' || tool.id === 'dotted-line' || tool.id === 'text') ? 'fill-current' : ''}`} 
                 strokeWidth={2}
               />
-              {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 -ml-1 w-1 h-8 bg-blue-600 rounded-r-full" />}
+              {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 -ml-1 w-0.5 h-5 bg-blue-600 rounded-r-full" />}
             </button>
           );
         })}
@@ -85,38 +85,38 @@ const Toolbar: React.FC<ToolbarProps> = ({
         <button
           onClick={onAISolve}
           disabled={isAISolving}
-          className={`p-3 rounded-lg transition-all duration-200 group relative
+          className={`p-2 rounded-lg transition-all duration-200 group relative
             ${isAISolving ? 'bg-purple-100 text-purple-600 animate-pulse' : 'text-purple-600 hover:bg-purple-50'}`}
           title="Magic AI Solve (M)"
         >
-          <Sparkles className="w-6 h-6 fill-current" strokeWidth={2} />
+          <Sparkles className="w-4 h-4 fill-current" strokeWidth={2} />
         </button>
 
-        <div className="w-8 h-px bg-gray-200 my-1" />
+        <div className="w-5 h-px bg-gray-200 my-0.5" />
 
         <button
           onClick={toggle3DPanel}
-          className={`p-3 rounded-lg transition-all duration-200 group relative
+          className={`p-2 rounded-lg transition-all duration-200 group relative
             ${is3DActive || is3DPanelOpen ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
           title="3D Objects"
         >
-          <Box className="w-6 h-6" strokeWidth={2} />
-          {(is3DActive || is3DPanelOpen) && <div className="absolute left-0 top-1/2 -translate-y-1/2 -ml-1 w-1 h-8 bg-blue-600 rounded-r-full" />}
+          <Box className="w-4 h-4" strokeWidth={2} />
+          {(is3DActive || is3DPanelOpen) && <div className="absolute left-0 top-1/2 -translate-y-1/2 -ml-1 w-0.5 h-5 bg-blue-600 rounded-r-full" />}
         </button>
 
-        <div className="w-8 h-px bg-gray-200 my-1" />
+        <div className="w-5 h-px bg-gray-200 my-0.5" />
 
-        <div className="grid grid-cols-2 gap-1 px-1">
+        <div className="grid grid-cols-2 gap-0.5 px-0.5">
           {shapeTools.map((tool) => {
             const isActive = currentTool === tool.id;
              return (
               <button
                 key={tool.id}
                 onClick={() => setTool(tool.id as ToolType)}
-                className={`p-2 rounded-lg transition-colors ${isActive ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+                className={`p-1.5 rounded-lg transition-colors ${isActive ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
                 title={tool.label}
               >
-                <tool.icon className="w-5 h-5" strokeWidth={2} />
+                <tool.icon className="w-3.5 h-3.5" strokeWidth={2} />
               </button>
             )
           })}
