@@ -1,0 +1,122 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny all operations
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidBoard(data) {
+      return data.keys().hasAll(['id', 'name', 'ownerId', 'createdAt', 'updatedAt']) &&
+             data.keys().size() == 5 &&
+             data.id is string && isValidId(data.id) &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.ownerId is string && data.ownerId.size() <= 128 &&
+             data.ownerId == request.auth.uid &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    function isValidStroke(data, bId) {
+      return data.keys().hasAll(['id', 'boardId', 'authorId', 'tool', 'color', 'width', 'points', 'order', 'createdAt', 'updatedAt']) &&
+             data.id is string && isValidId(data.id) &&
+             data.boardId is string && data.boardId == bId &&
+             data.authorId is string && data.authorId.size() <= 128 &&
+             data.authorId == request.auth.uid &&
+             data.tool is string && data.tool.size() <= 32 &&
+             data.color is string && data.color.size() <= 32 &&
+             data.width is number && data.width >= 0 && data.width <= 2000 &&
+             data.order is number &&
+             data.points is list && data.points.size() <= 10000 &&
+             (!('text' in data) || (data.text is string && data.text.size() <= 5000)) &&
+             (!('textWidth' in data) || (data.textWidth is number && data.textWidth >= 0)) &&
+             (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 2000)) &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    // Boards collection
+    match /boards/{boardId} {
+      allow get: if isValidId(boardId);
+      allow list: if false; // Disallow querying all boards
+
+      allow create: if isVerified() &&
+                       isValidId(boardId) &&
+                       incoming().id == boardId &&
+                       isValidBoard(incoming()) &&
+                       incoming().createdAt == request.time &&
+                       incoming().updatedAt == request.time;
+
+      allow update: if isVerified() &&
+                       isValidId(boardId) &&
+                       isValidBoard(incoming()) &&
+                       incoming().id == existing().id &&
+                       incoming().ownerId == existing().ownerId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt == request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'updatedAt']);
+
+      allow delete: if isVerified() &&
+                       isValidId(boardId) &&
+                       existing().ownerId == request.auth.uid;
+
+      // Strokes subcollection
+      match /strokes/{strokeId} {
+        allow get: if isValidId(boardId) &&
+                      isValidId(strokeId) &&
+                      exists(/databases/$(database)/documents/boards/$(boardId));
+
+        allow list: if isValidId(boardId) &&
+                       exists(/databases/$(database)/documents/boards/$(boardId));
+
+        allow create: if isVerified() &&
+                         isValidId(boardId) &&
+                         isValidId(strokeId) &&
+                         exists(/databases/$(database)/documents/boards/$(boardId)) &&
+                         incoming().id == strokeId &&
+                         isValidStroke(incoming(), boardId) &&
+                         incoming().createdAt == request.time &&
+                         incoming().updatedAt == request.time;
+
+        allow update: if isVerified() &&
+                         isValidId(boardId) &&
+                         isValidId(strokeId) &&
+                         isValidStroke(incoming(), boardId) &&
+                         incoming().id == existing().id &&
+                         incoming().boardId == existing().boardId &&
+                         incoming().authorId == existing().authorId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt == request.time &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['points', 'width', 'color', 'text', 'textWidth', 'imageUrl', 'order', 'updatedAt']);
+
+        allow delete: if isVerified() &&
+                         isValidId(boardId) &&
+                         isValidId(strokeId) &&
+                         (existing().authorId == request.auth.uid ||
+                          get(/databases/$(database)/documents/boards/$(boardId)).data.ownerId == request.auth.uid);
+      }
+    }
+  }
+}

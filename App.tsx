@@ -10,10 +10,21 @@ import ShapeProperties from './components/ShapeProperties';
 import ThreeDShapesPanel from './components/ThreeDShapesPanel';
 import ZoomControls from './components/ZoomControls';
 import AIAssistant from './components/AIAssistant';
-import { ToolType, WhiteboardHandle } from './types';
+import { ToolType, WhiteboardHandle, Stroke } from './types';
 import { DEFAULT_COLOR, DEFAULT_STROKE_WIDTH, DEFAULT_ERASER_WIDTH, DEFAULT_SHAPE_SIZE } from './constants';
 import { GoogleGenAI } from "@google/genai";
 import { jsPDF } from "jspdf";
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth, loginWithGoogle, logoutUser, testConnection } from './firebase';
+import { 
+  generateBoardId, 
+  ensureBoardExists, 
+  updateBoardTitle, 
+  subscribeToBoard, 
+  subscribeToStrokes, 
+  syncFullStrokesList 
+} from './services/boardSync';
+import { ShareModal } from './components/ShareModal';
 
 const App: React.FC = () => {
   const [currentTool, setCurrentTool] = useState<ToolType>('pen');
@@ -30,6 +41,26 @@ const App: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(true);
   const [is3DPanelOpen, setIs3DPanelOpen] = useState(false);
+
+  // Real-time Collaboration & Auth State
+  const [boardId] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const existing = params.get('board');
+    if (existing && existing.trim()) {
+      return existing.trim();
+    }
+    const newId = generateBoardId();
+    const newUrl = `${window.location.pathname}?board=${encodeURIComponent(newId)}`;
+    window.history.replaceState({}, '', newUrl);
+    return newId;
+  });
+  const [boardName, setBoardName] = useState("Новая доска");
+  const [user, setUser] = useState<User | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  
+  const isLocalDrawingRef = useRef(false);
+  const isRemoteUpdateRef = useRef(false);
 
   const handleToggleDarkMode = useCallback(() => {
     setIsDarkMode(prev => {
@@ -66,6 +97,87 @@ const App: React.FC = () => {
   const handleHistoryChange = useCallback((undo: boolean, redo: boolean) => {
     setCanUndo(undo);
     setCanRedo(redo);
+  }, []);
+
+  // Firebase Real-time listeners
+  useEffect(() => {
+    testConnection();
+    const unsubAuth = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        ensureBoardExists(boardId, boardName, currentUser);
+      }
+    });
+    return () => unsubAuth();
+  }, [boardId]);
+
+  useEffect(() => {
+    const unsubBoard = subscribeToBoard(boardId, (meta) => {
+      if (meta && meta.name) {
+        setBoardName(meta.name);
+      }
+    });
+
+    const unsubStrokes = subscribeToStrokes(boardId, (remoteStrokes) => {
+      if (!isLocalDrawingRef.current && remoteStrokes.length > 0) {
+        isRemoteUpdateRef.current = true;
+        whiteboardRef.current?.setRemoteStrokes(remoteStrokes);
+        setTimeout(() => {
+          isRemoteUpdateRef.current = false;
+        }, 120);
+      }
+    });
+
+    return () => {
+      unsubBoard();
+      unsubStrokes();
+    };
+  }, [boardId]);
+
+  const handleStrokesChange = useCallback((strokes: Stroke[]) => {
+    if (isRemoteUpdateRef.current) return;
+    if (user) {
+      setIsSyncing(true);
+      isLocalDrawingRef.current = true;
+      syncFullStrokesList(boardId, strokes, user)
+        .catch(err => console.error("Sync error:", err))
+        .finally(() => {
+          setIsSyncing(false);
+          isLocalDrawingRef.current = false;
+        });
+    }
+  }, [boardId, user]);
+
+  const handleBoardNameChange = useCallback((newName: string) => {
+    setBoardName(newName);
+    if (user) {
+      updateBoardTitle(boardId, newName);
+    }
+  }, [boardId, user]);
+
+  const handleLogin = useCallback(async () => {
+    try {
+      const loggedUser = await loginWithGoogle();
+      if (loggedUser) {
+        await ensureBoardExists(boardId, boardName, loggedUser);
+        if (whiteboardRef.current) {
+          const snapshot = whiteboardRef.current.getSnapshot();
+          if (snapshot.strokes.length > 0) {
+            await syncFullStrokesList(boardId, snapshot.strokes, loggedUser);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Google Sign-In failed', err);
+    }
+  }, [boardId, boardName]);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await logoutUser();
+    } catch (err) {
+      console.error('Sign-Out failed', err);
+    }
   }, []);
   
   const is3DShapeTool = ['cube', 'cylinder', 'sphere', 'pyramid', 'prism'].includes(currentTool);
@@ -446,6 +558,13 @@ const App: React.FC = () => {
         onSave={handleSave} 
         onOpen={handleOpen} 
         onExportPNG={handleExportPNG}
+        onShare={() => setIsShareModalOpen(true)}
+        boardName={boardName}
+        onBoardNameChange={handleBoardNameChange}
+        user={user}
+        onLogin={handleLogin}
+        onLogout={handleLogout}
+        isSyncing={isSyncing}
         isDarkMode={isDarkMode}
         onToggleDarkMode={handleToggleDarkMode}
         isVisible={isUIVisible}
@@ -531,6 +650,16 @@ const App: React.FC = () => {
         onDrawStart={handleDrawStart} 
         onZoomChange={setZoom} 
         onShapeSelect={handleShapeSelect} 
+        onStrokesChange={handleStrokesChange}
+      />
+      <ShareModal 
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        boardId={boardId}
+        boardName={boardName}
+        user={user}
+        onLogin={handleLogin}
+        isDarkMode={isDarkMode}
       />
     </div>
   );

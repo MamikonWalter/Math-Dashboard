@@ -17,6 +17,7 @@ interface WhiteboardProps {
   onDrawStart: () => void;
   onZoomChange?: (zoom: number) => void;
   onShapeSelect?: (size: number | null) => void;
+  onStrokesChange?: (strokes: Stroke[]) => void;
 }
 
 interface TextInputState {
@@ -41,8 +42,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   triggerRedo,
   onDrawStart,
   onZoomChange,
-  onShapeSelect
+  onShapeSelect,
+  onStrokesChange
 }, ref) => {
+  const genId = () => `s_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
@@ -367,6 +370,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         render();
       }
     },
+    setRemoteStrokes: (remoteStrokes: Stroke[]) => {
+      if (Array.isArray(remoteStrokes)) {
+        strokesRef.current = remoteStrokes;
+        remoteStrokes.forEach(s => {
+          if (s.tool === 'image' && s.imageUrl && !imageCache.current[s.imageUrl]) {
+            const img = new Image();
+            img.src = s.imageUrl;
+            img.onload = () => render();
+            imageCache.current[s.imageUrl] = img;
+          }
+        });
+        historyRef.current = [remoteStrokes];
+        historyStepRef.current = 0;
+        render();
+      }
+    },
     setZoom: (targetScale: number) => {
         const constrainedScale = Math.max(0.01, Math.min(targetScale, 4));
         const canvas = canvasRef.current;
@@ -420,6 +439,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         const newStrokes = JSON.parse(JSON.stringify(clipboardRef.current)).map((stroke: Stroke) => {
             return {
                 ...stroke,
+                id: genId(),
                 points: stroke.points.map(p => ({ x: p.x + dx, y: p.y + dy }))
             };
         });
@@ -483,6 +503,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             imageCache.current[imageUrl] = img;
             const worldPos = screenToWorld(screenX, screenY);
             const newStroke: Stroke = {
+                id: genId(),
                 tool: 'image',
                 points: [worldPos],
                 color: '#000000',
@@ -551,6 +572,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const handleFinishText = useCallback(() => {
       if (activeTextInput && activeTextInput.value.trim().length > 0) {
           const newStroke: Stroke = {
+              id: genId(),
               tool: 'text',
               points: [{ x: activeTextInput.x, y: activeTextInput.y }],
               color: activeTextInput.color,
@@ -645,6 +667,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     if (shapeTools.includes(tool)) {
         onDrawStart(); 
         const shapeStroke: Stroke = {
+            id: genId(),
             points: [worldPos], color, width: shapeSize * PIXELS_PER_PERCENT, tool
         };
         strokesRef.current = [...strokesRef.current, shapeStroke];
@@ -660,7 +683,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     onDrawStart();
     selectedIndicesRef.current.clear();
     const initialPoints = tool === 'dotted-line' ? [worldPos, worldPos] : [worldPos];
-    currentStrokeRef.current = { points: initialPoints, color, width: strokeWidth, tool };
+    currentStrokeRef.current = { id: genId(), points: initialPoints, color, width: strokeWidth, tool };
     render();
   };
 
@@ -817,6 +840,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       newHistory.push([...strokesRef.current]);
       historyRef.current = newHistory; historyStepRef.current += 1;
       onHistoryChange(true, false);
+      if (onStrokesChange) {
+        onStrokesChange(strokesRef.current);
+      }
   };
 
   // React to shapeSize changes for selected items
@@ -879,6 +905,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         if (historyStepRef.current > 0) {
             historyStepRef.current -= 1; strokesRef.current = historyRef.current[historyStepRef.current];
             selectedIndicesRef.current.clear(); onHistoryChange(historyStepRef.current > 0, true); render();
+            if (onStrokesChange) onStrokesChange(strokesRef.current);
         }
     }
     if (triggerRedo > prevRedoTrigger.current) {
@@ -886,9 +913,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         if (historyStepRef.current < historyRef.current.length - 1) {
             historyStepRef.current += 1; strokesRef.current = historyRef.current[historyStepRef.current];
             selectedIndicesRef.current.clear(); onHistoryChange(true, historyStepRef.current < historyRef.current.length - 1); render();
+            if (onStrokesChange) onStrokesChange(strokesRef.current);
         }
     }
-  }, [triggerUndo, triggerRedo, render, onHistoryChange]);
+  }, [triggerUndo, triggerRedo, render, onHistoryChange, onStrokesChange]);
 
   const getCursorStyle = () => {
     if (isResizingTextRef.current) return 'cursor-ew-resize';

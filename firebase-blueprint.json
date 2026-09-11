@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "Board": {
+      "title": "Board",
+      "description": "Metadata for a collaborative whiteboard room",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique identifier of the board"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Display title of the whiteboard"
+        },
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "User ID of the board creator"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last modification timestamp"
+        }
+      },
+      "required": ["id", "name", "ownerId", "createdAt", "updatedAt"]
+    },
+    "Stroke": {
+      "title": "Stroke",
+      "description": "Individual stroke, shape, text, or object drawn on the whiteboard",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Unique ID of the stroke"
+        },
+        "boardId": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Reference to parent board ID"
+        },
+        "authorId": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "User ID of the person who created the stroke"
+        },
+        "tool": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Tool used: pen, dotted-line, shape, text, etc."
+        },
+        "color": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Color in hex or css format"
+        },
+        "width": {
+          "type": "number",
+          "description": "Stroke width or shape scale"
+        },
+        "points": {
+          "type": "array",
+          "description": "List of coordinate points {x, y}"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 5000,
+          "description": "Optional text content for text items"
+        },
+        "textWidth": {
+          "type": "number",
+          "description": "Optional width for text bounding box"
+        },
+        "imageUrl": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Optional image URL if tool is image"
+        },
+        "order": {
+          "type": "number",
+          "description": "Z-order index or sequence order"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["id", "boardId", "authorId", "tool", "color", "width", "points", "order", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/boards/{boardId}": {
+      "schema": "Board",
+      "description": "Collection of collaborative whiteboards"
+    },
+    "/boards/{boardId}/strokes/{strokeId}": {
+      "schema": "Stroke",
+      "description": "Subcollection of strokes for a specific whiteboard"
+    }
+  }
+}

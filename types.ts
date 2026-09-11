@@ -25,6 +25,7 @@ export interface Point {
 }
 
 export interface Stroke {
+  id?: string;
   points: Point[];
   color: string;
   width: number; // For shapes and images, this represents size/width. For text, font size.
@@ -55,6 +56,7 @@ export interface WhiteboardData {
 export interface WhiteboardHandle {
   getSnapshot: () => WhiteboardData;
   restoreSnapshot: (data: WhiteboardData) => void;
+  setRemoteStrokes: (strokes: Stroke[]) => void;
   setZoom: (scale: number) => void;
   deleteSelection: () => void;
   copySelection: () => boolean;

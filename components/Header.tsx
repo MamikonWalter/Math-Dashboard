@@ -1,12 +1,19 @@
-
 import React, { useRef, useState, useEffect } from 'react';
-import { Share2, Save, FolderOpen, Image as ImageIcon, Moon, Sun } from 'lucide-react';
+import { Share2, Save, FolderOpen, Image as ImageIcon, Moon, Sun, Cloud, CloudOff, LogIn, LogOut } from 'lucide-react';
+import { User } from 'firebase/auth';
 
 interface HeaderProps {
   onClear: () => void;
   onSave: () => void;
   onOpen: (file: File) => void;
   onExportPNG: (boardName: string) => void;
+  onShare: () => void;
+  boardName: string;
+  onBoardNameChange: (name: string) => void;
+  user: User | null;
+  onLogin: () => void;
+  onLogout: () => void;
+  isSyncing?: boolean;
   isDarkMode?: boolean;
   onToggleDarkMode?: () => void;
   isVisible?: boolean;
@@ -17,14 +24,25 @@ const Header: React.FC<HeaderProps> = ({
   onSave, 
   onOpen, 
   onExportPNG,
+  onShare,
+  boardName,
+  onBoardNameChange,
+  user,
+  onLogin,
+  onLogout,
+  isSyncing = false,
   isDarkMode = false,
   onToggleDarkMode,
   isVisible = true
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const [boardName, setBoardName] = useState("Новая доска");
+  const [localName, setLocalName] = useState(boardName);
   const [isEditingName, setIsEditingName] = useState(false);
+
+  useEffect(() => {
+    setLocalName(boardName);
+  }, [boardName]);
 
   const handleOpenClick = () => {
     fileInputRef.current?.click();
@@ -40,22 +58,22 @@ const Header: React.FC<HeaderProps> = ({
 
   useEffect(() => {
     if (isEditingName && nameInputRef.current) {
-        nameInputRef.current.focus();
-        nameInputRef.current.select();
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
     }
   }, [isEditingName]);
 
   const handleNameSubmit = () => {
-      setIsEditingName(false);
-      if (boardName.trim() === '') {
-          setBoardName("Новая доска");
-      }
+    setIsEditingName(false);
+    const trimmed = localName.trim() || "Новая доска";
+    setLocalName(trimmed);
+    onBoardNameChange(trimmed);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') {
-          handleNameSubmit();
-      }
+    if (e.key === 'Enter') {
+      handleNameSubmit();
+    }
   };
 
   return (
@@ -69,43 +87,54 @@ const Header: React.FC<HeaderProps> = ({
       }`}
     >
       <div className="flex items-center gap-4 pl-2">
-        <div className="flex items-center gap-0 select-none cursor-pointer" onClick={() => window.location.reload()}>
-          <span className={`text-2xl font-bold tracking-tight transition-colors ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Mathters</span>
+        <div className="flex items-center gap-2 select-none cursor-pointer" onClick={() => window.location.reload()}>
+          <span className={`text-2xl font-bold tracking-tight transition-colors ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+            Mathters
+          </span>
         </div>
 
         <div className={`h-6 w-px transition-colors ${isDarkMode ? 'bg-[#3f3f46]' : 'bg-gray-300'}`} />
 
-        <div className="flex flex-col justify-center">
-            <div className="flex items-center gap-2 text-sm font-medium h-5">
-                {isEditingName ? (
-                    <input
-                        ref={nameInputRef}
-                        type="text"
-                        value={boardName}
-                        onChange={(e) => setBoardName(e.target.value)}
-                        onBlur={handleNameSubmit}
-                        onKeyDown={handleKeyDown}
-                        maxLength={20}
-                        className={`rounded px-1.5 py-0.5 outline-none text-sm w-40 border ${
-                          isDarkMode 
-                            ? 'bg-[#18181b] border-blue-500 text-gray-100' 
-                            : 'bg-white border-blue-500 text-gray-900'
-                        }`}
-                    />
-                ) : (
-                    <span 
-                        onClick={() => setIsEditingName(true)}
-                        className={`cursor-pointer px-2 py-0.5 rounded transition-colors truncate max-w-[200px] ${
-                          isDarkMode 
-                            ? 'text-gray-200 hover:bg-[#2c2c31]' 
-                            : 'text-gray-900 hover:bg-gray-100'
-                        }`}
-                        title="Переименовать"
-                    >
-                        {boardName}
-                    </span>
-                )}
-            </div>
+        <div className="flex items-center gap-2">
+          {isEditingName ? (
+            <input
+              ref={nameInputRef}
+              type="text"
+              value={localName}
+              onChange={(e) => setLocalName(e.target.value)}
+              onBlur={handleNameSubmit}
+              onKeyDown={handleKeyDown}
+              maxLength={30}
+              className={`rounded px-2 py-0.5 outline-none text-sm w-44 border font-medium ${
+                isDarkMode 
+                  ? 'bg-[#18181b] border-blue-500 text-gray-100' 
+                  : 'bg-white border-blue-500 text-gray-900'
+              }`}
+            />
+          ) : (
+            <span 
+              onClick={() => setIsEditingName(true)}
+              className={`cursor-pointer px-2 py-0.5 rounded font-medium text-sm transition-colors truncate max-w-[180px] ${
+                isDarkMode 
+                  ? 'text-gray-200 hover:bg-[#2c2c31]' 
+                  : 'text-gray-900 hover:bg-gray-100'
+              }`}
+              title="Нажмите, чтобы переименовать доску"
+            >
+              {localName}
+            </span>
+          )}
+
+          {/* Sync indicator */}
+          <div 
+            className="flex items-center gap-1 text-[11px] font-medium text-emerald-500"
+            title="Облачная синхронизация Firestore активна"
+          >
+            <Cloud className={`w-3.5 h-3.5 ${isSyncing ? 'animate-pulse text-blue-500' : 'text-emerald-500'}`} />
+            <span className="hidden sm:inline text-[10px] text-gray-400">
+              {isSyncing ? 'Сохранение...' : 'В сети'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -120,11 +149,11 @@ const Header: React.FC<HeaderProps> = ({
           title="Сохранить проект как JSON"
         >
           <Save className="w-4 h-4" />
-          JSON
+          <span className="hidden md:inline">JSON</span>
         </button>
 
         <button 
-          onClick={() => onExportPNG(boardName)}
+          onClick={() => onExportPNG(localName)}
           className={`px-3 py-2 rounded-md font-medium text-sm flex items-center gap-2 transition-colors border ${
             isDarkMode 
               ? 'text-gray-200 bg-[#28282e] hover:bg-[#32323a] border-[#3f3f46]' 
@@ -133,7 +162,7 @@ const Header: React.FC<HeaderProps> = ({
           title="Экспорт всей доски в PNG"
         >
           <ImageIcon className="w-4 h-4" />
-          PNG
+          <span className="hidden md:inline">PNG</span>
         </button>
 
         {onToggleDarkMode && (
@@ -162,22 +191,69 @@ const Header: React.FC<HeaderProps> = ({
           title="Импортировать JSON проект"
         >
           <FolderOpen className="w-4 h-4" />
-          Импорт
+          <span className="hidden md:inline">Импорт</span>
         </button>
         <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileChange} 
-            className="hidden" 
-            accept=".json,.mathters"
+          type="file" 
+          ref={fileInputRef} 
+          onChange={handleFileChange} 
+          className="hidden" 
+          accept=".json,.mathters"
         />
 
+        {/* User login / status button */}
+        {user ? (
+          <div className="flex items-center gap-1.5 pl-1">
+            {user.photoURL ? (
+              <img 
+                src={user.photoURL} 
+                alt={user.displayName || 'Пользователь'} 
+                className="w-8 h-8 rounded-full border border-blue-500/40 object-cover"
+                referrerPolicy="no-referrer"
+                title={`Вы вошли как ${user.displayName || user.email}`}
+              />
+            ) : (
+              <div 
+                className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs"
+                title={`Вы вошли как ${user.displayName || user.email}`}
+              >
+                {(user.displayName || user.email || 'U').charAt(0).toUpperCase()}
+              </div>
+            )}
+            <button
+              onClick={onLogout}
+              className={`p-2 rounded-md text-sm border transition-colors ${
+                isDarkMode 
+                  ? 'text-gray-400 hover:text-red-400 hover:bg-[#28282e] border-[#3f3f46]' 
+                  : 'text-gray-500 hover:text-red-600 hover:bg-gray-100 border-gray-300'
+              }`}
+              title="Выйти из аккаунта Google"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onLogin}
+            className={`px-3 py-2 rounded-md font-medium text-xs flex items-center gap-1.5 border transition-colors ${
+              isDarkMode 
+                ? 'bg-blue-600/20 text-blue-400 border-blue-500/40 hover:bg-blue-600/30' 
+                : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100'
+            }`}
+            title="Войти через Google для синхронизации"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Войти</span>
+          </button>
+        )}
+
         <button 
-          onClick={onClear}
-          className="ml-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+          onClick={onShare}
+          className="ml-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+          title="Открыть доступ к доске для совместной работы"
         >
           <Share2 className="w-4 h-4" />
-          Поделиться
+          <span>Поделиться</span>
         </button>
       </div>
     </div>
