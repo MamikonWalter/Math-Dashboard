@@ -6,11 +6,22 @@ interface HistoryControlsProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  isVisible?: boolean;
 }
 
-const HistoryControls: React.FC<HistoryControlsProps> = ({ onUndo, onRedo, canUndo, canRedo }) => {
+const HistoryControls: React.FC<HistoryControlsProps> = ({ 
+  onUndo, 
+  onRedo, 
+  canUndo, 
+  canRedo,
+  isVisible = true
+}) => {
   return (
-    <div className="fixed bottom-6 left-6 flex bg-white rounded-lg shadow-lg border border-gray-200 p-1 z-20">
+    <div 
+      className={`fixed bottom-6 left-6 flex bg-white rounded-lg shadow-lg border border-gray-200 p-1 z-20 select-none ui-smooth-transition ${
+        isVisible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-24 pointer-events-none'
+      }`}
+    >
       <button
         onClick={onUndo}
         disabled={!canUndo}

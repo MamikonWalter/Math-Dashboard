@@ -8,10 +8,12 @@ interface ShapePropertiesProps {
 }
 
 const ShapeProperties: React.FC<ShapePropertiesProps> = ({ size, setSize, isVisible }) => {
-  if (!isVisible) return null;
-
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white rounded-full shadow-lg border border-gray-200 px-6 py-3 z-30 animate-in fade-in zoom-in-95 flex items-center gap-4">
+    <div 
+      className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-white rounded-full shadow-lg border border-gray-200 px-6 py-3 z-30 flex items-center gap-4 select-none ui-smooth-transition ${
+        isVisible ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto' : 'opacity-0 translate-y-8 scale-95 pointer-events-none'
+      }`}
+    >
       <span className="text-sm font-medium text-gray-700 whitespace-nowrap">Shape Scale</span>
       <input
         type="range"

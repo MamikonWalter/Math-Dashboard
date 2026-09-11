@@ -29,6 +29,7 @@ interface ToolbarProps {
   is3DPanelOpen: boolean;
   onAISolve: () => void;
   isAISolving: boolean;
+  isVisible?: boolean;
 }
 
 const Toolbar: React.FC<ToolbarProps> = ({ 
@@ -37,7 +38,8 @@ const Toolbar: React.FC<ToolbarProps> = ({
   toggle3DPanel,
   is3DPanelOpen,
   onAISolve,
-  isAISolving
+  isAISolving,
+  isVisible = true
 }) => {
   
   const mainTools = [
@@ -61,7 +63,11 @@ const Toolbar: React.FC<ToolbarProps> = ({
   const is3DActive = ['cube', 'cylinder', 'sphere', 'pyramid', 'prism'].includes(currentTool);
 
   return (
-    <div className="fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20">
+    <div 
+      className={`fixed left-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20 ui-smooth-transition ${
+        isVisible ? 'opacity-100 translate-x-0 pointer-events-auto' : 'opacity-0 -translate-x-24 pointer-events-none'
+      }`}
+    >
       <div className="bg-white p-1.5 rounded-xl shadow-xl border border-gray-200 flex flex-col gap-0.5 items-center select-none">
         {mainTools.map((tool) => {
           const isActive = currentTool === tool.id;

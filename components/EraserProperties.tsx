@@ -7,10 +7,12 @@ interface EraserPropertiesProps {
 }
 
 const EraserProperties: React.FC<EraserPropertiesProps> = ({ size, setSize, isVisible }) => {
-  if (!isVisible) return null;
-
   return (
-    <div className="fixed bottom-20 right-6 bg-white rounded-lg shadow-lg border border-gray-200 p-4 z-20 animate-in fade-in slide-in-from-bottom-4">
+    <div 
+      className={`fixed bottom-20 right-6 bg-white rounded-lg shadow-lg border border-gray-200 p-4 z-20 select-none ui-smooth-transition ${
+        isVisible ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto' : 'opacity-0 translate-y-6 scale-95 pointer-events-none'
+      }`}
+    >
       <div className="flex flex-col gap-2 w-48">
         <div className="flex justify-between items-center">
             <span className="text-sm font-medium text-gray-700">Eraser Size</span>

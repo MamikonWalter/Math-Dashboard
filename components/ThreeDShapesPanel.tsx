@@ -10,8 +10,6 @@ interface ThreeDShapesPanelProps {
 }
 
 const ThreeDShapesPanel: React.FC<ThreeDShapesPanelProps> = ({ currentTool, setTool, isVisible }) => {
-  if (!isVisible) return null;
-
   const shapes = [
     { id: 'cube', icon: Box, label: 'Cube' },
     { id: 'cylinder', icon: Cylinder, label: 'Cylinder' },
@@ -21,7 +19,11 @@ const ThreeDShapesPanel: React.FC<ThreeDShapesPanelProps> = ({ currentTool, setT
   ];
 
   return (
-    <div className="fixed left-24 top-[240px] bg-white rounded-lg shadow-2xl border border-gray-200 p-3 z-20 animate-in fade-in slide-in-from-left-4 duration-200 w-48">
+    <div 
+      className={`fixed left-24 top-[240px] bg-white rounded-lg shadow-2xl border border-gray-200 p-3 z-20 select-none w-48 ui-smooth-transition ${
+        isVisible ? 'opacity-100 translate-x-0 scale-100 pointer-events-auto' : 'opacity-0 -translate-x-8 scale-95 pointer-events-none'
+      }`}
+    >
       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 px-1">3D Objects</h3>
       <div className="grid grid-cols-2 gap-2">
         {shapes.map((shape) => {

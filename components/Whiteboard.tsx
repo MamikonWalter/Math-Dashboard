@@ -10,6 +10,7 @@ interface WhiteboardProps {
   eraserWidth: number;
   shapeSize: number;
   showGrid: boolean;
+  isDarkMode?: boolean;
   onHistoryChange: (canUndo: boolean, canRedo: boolean) => void;
   triggerUndo: number;
   triggerRedo: number;
@@ -34,6 +35,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   eraserWidth,
   shapeSize,
   showGrid,
+  isDarkMode = false,
   onHistoryChange,
   triggerUndo,
   triggerRedo,
@@ -462,7 +464,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         if (!offCtx) return canvas.toDataURL('image/png');
 
         // Fill background color
-        offCtx.fillStyle = '#fbfbfb';
+        offCtx.fillStyle = isDarkMode ? '#18181b' : '#fbfbfb';
         offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
 
         // Draw content centered in padding area
@@ -538,7 +540,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         ctx.restore();
     }
     if (currentStrokeRef.current) drawStrokeOnCtx(ctx, currentStrokeRef.current);
-  }, [showGrid]);
+  }, [showGrid, isDarkMode]);
+
+  // Re-render when dark mode or grid changes
+  useEffect(() => {
+    render();
+  }, [isDarkMode, render]);
 
   // --- Handlers ---
   const handleFinishText = useCallback(() => {
@@ -754,15 +761,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     ctx.save(); ctx.lineWidth = 1 / scale;
     for (let x = startX; x < right; x += gridSize) {
         ctx.beginPath(); const isMajor = x % (gridSize * majorGridStep) === 0;
-        ctx.strokeStyle = isMajor ? '#cbd5e1' : '#f1f5f9';
-        if (x === 0) ctx.strokeStyle = '#94a3b8';
+        ctx.strokeStyle = isDarkMode 
+            ? (isMajor ? '#3f3f46' : '#27272a') 
+            : (isMajor ? '#cbd5e1' : '#f1f5f9');
+        if (x === 0) ctx.strokeStyle = isDarkMode ? '#71717a' : '#94a3b8';
         ctx.lineWidth = (isMajor || x === 0) ? (2 / scale) : (1 / scale);
         ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
     }
     for (let y = startY; y < bottom; y += gridSize) {
         ctx.beginPath(); const isMajor = y % (gridSize * majorGridStep) === 0;
-        ctx.strokeStyle = isMajor ? '#cbd5e1' : '#f1f5f9';
-        if (y === 0) ctx.strokeStyle = '#94a3b8';
+        ctx.strokeStyle = isDarkMode 
+            ? (isMajor ? '#3f3f46' : '#27272a') 
+            : (isMajor ? '#cbd5e1' : '#f1f5f9');
+        if (y === 0) ctx.strokeStyle = isDarkMode ? '#71717a' : '#94a3b8';
         ctx.lineWidth = (isMajor || y === 0) ? (2 / scale) : (1 / scale);
         ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke();
     }
@@ -890,7 +901,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const inputScreenPos = activeTextInput ? worldToScreen(activeTextInput.x, activeTextInput.y) : { x: 0, y: 0 };
 
   return (
-    <div ref={containerRef} className={`absolute inset-0 z-0 bg-[#f0f2f5] overflow-hidden ${getCursorStyle()}`} onContextMenu={(e) => e.preventDefault()}>
+    <div ref={containerRef} className={`absolute inset-0 z-0 ${isDarkMode ? 'bg-[#18181b]' : 'bg-[#f0f2f5]'} transition-colors duration-300 overflow-hidden ${getCursorStyle()}`} onContextMenu={(e) => e.preventDefault()}>
       <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={move} onMouseUp={endDrawing} onMouseLeave={endDrawing} onTouchStart={startDrawing} onTouchMove={move} onTouchEnd={endDrawing} className="block touch-none" />
       {activeTextInput && (
           <div className="absolute z-40 pointer-events-none" style={{ left: inputScreenPos.x, top: inputScreenPos.y }}>

@@ -17,10 +17,14 @@ const ColorPicker: React.FC<ColorPickerProps> = ({
   setStrokeWidth,
   isVisible 
 }) => {
-  if (!isVisible) return null;
-
   return (
-    <div className="fixed left-16 top-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl border border-gray-200 p-2.5 w-36 z-20 animate-in fade-in slide-in-from-left-4 duration-200 select-none">
+    <div 
+      className={`fixed left-16 top-1/2 -translate-y-1/2 bg-white rounded-xl shadow-xl border border-gray-200 p-2.5 w-36 z-20 select-none ui-smooth-transition ${
+        isVisible 
+          ? 'opacity-100 translate-x-0 scale-100 pointer-events-auto' 
+          : 'opacity-0 -translate-x-12 scale-95 pointer-events-none'
+      }`}
+    >
       
       {/* Thickness Slider */}
       <div className="mb-2">

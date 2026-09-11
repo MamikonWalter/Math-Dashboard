@@ -26,8 +26,25 @@ const App: React.FC = () => {
   const [showGrid, setShowGrid] = useState(false);
   
   // UI Visibility
+  const [isUIVisible, setIsUIVisible] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(true);
   const [is3DPanelOpen, setIs3DPanelOpen] = useState(false);
+
+  const handleToggleDarkMode = useCallback(() => {
+    setIsDarkMode(prev => {
+      const next = !prev;
+      setColor(currentColor => {
+        if (next && (currentColor.toLowerCase() === '#000000' || currentColor === '#111111')) {
+          return '#ffffff';
+        } else if (!next && currentColor.toLowerCase() === '#ffffff') {
+          return '#000000';
+        }
+        return currentColor;
+      });
+      return next;
+    });
+  }, []);
   
   // AI State
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
@@ -298,6 +315,15 @@ const App: React.FC = () => {
   // Keyboard Shortcuts (Layout-Independent)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Toggle UI visibility with Tab key
+      if (e.key === 'Tab' || e.code === 'Tab') {
+        if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+          e.preventDefault();
+          setIsUIVisible(prev => !prev);
+          return;
+        }
+      }
+
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const isCtrlOrCmd = e.metaKey || e.ctrlKey;
       const code = e.code;
@@ -329,6 +355,7 @@ const App: React.FC = () => {
               case 'KeyS': handleSetTool('square'); break;
               case 'KeyE': handleSetTool('eraser'); break;
               case 'KeyG': setShowGrid(prev => !prev); break;
+              case 'KeyD': handleToggleDarkMode(); break;
               case 'Equal': e.preventDefault(); handleZoomIn(); break;
               case 'Minus': e.preventDefault(); handleZoomOut(); break;
           }
@@ -336,7 +363,7 @@ const App: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo, handleSetTool, handleZoomIn, handleZoomOut]);
+  }, [handleUndo, handleRedo, handleSetTool, handleZoomIn, handleZoomOut, handleToggleDarkMode]);
 
   // Handle Global Paste and Copy Source Tracking
   useEffect(() => {
@@ -413,24 +440,91 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-[#f0f2f5] select-none">
+    <div className={`relative w-screen h-screen overflow-hidden ${isDarkMode ? 'bg-[#18181b]' : 'bg-[#f0f2f5]'} transition-colors duration-300 select-none`}>
       <Header 
         onClear={handleClear} 
         onSave={handleSave} 
         onOpen={handleOpen} 
-        onExport={handleExport} 
         onExportPNG={handleExportPNG}
-        isExporting={isExporting} 
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={handleToggleDarkMode}
+        isVisible={isUIVisible}
       />
-      <Toolbar currentTool={currentTool} setTool={handleSetTool} undo={handleUndo} redo={handleRedo} canUndo={canUndo} canRedo={canRedo} toggle3DPanel={toggle3DPanel} is3DPanelOpen={is3DPanelOpen} onAISolve={handleAISolve} isAISolving={isAISolving} />
-      <ColorPicker isVisible={(currentTool === 'pen' || currentTool === 'dotted-line' || currentTool === 'text' || is2DShapeTool) && isColorPickerOpen} color={color} setColor={setColor} strokeWidth={strokeWidth} setStrokeWidth={setStrokeWidth} />
-      <EraserProperties isVisible={currentTool === 'eraser'} size={eraserWidth} setSize={setEraserWidth} />
-      <ThreeDShapesPanel isVisible={is3DPanelOpen} currentTool={currentTool} setTool={handleSetTool} />
-      <ShapeProperties isVisible={isAnyShapeTool || (currentTool === 'cursor' && isShapeSelected)} size={shapeSize} setSize={setShapeSize} />
-      <HistoryControls onUndo={handleUndo} onRedo={handleRedo} canUndo={canUndo} canRedo={canRedo} />
-      <AIAssistant isOpen={isAIPanelOpen} onClose={() => setIsAIPanelOpen(false)} isLoading={isAISolving} response={aiResponse} />
-      <ZoomControls zoom={zoom} onZoomIn={handleZoomIn} onZoomOut={handleZoomOut} onReset={handleResetZoom} showGrid={showGrid} toggleGrid={() => setShowGrid(!showGrid)} />
-      <Whiteboard ref={whiteboardRef} tool={currentTool} color={color} strokeWidth={strokeWidth} eraserWidth={eraserWidth} shapeSize={shapeSize} showGrid={showGrid} onHistoryChange={handleHistoryChange} triggerUndo={undoTrigger} triggerRedo={redoTrigger} onDrawStart={handleDrawStart} onZoomChange={setZoom} onShapeSelect={handleShapeSelect} />
+      <Toolbar 
+        currentTool={currentTool} 
+        setTool={handleSetTool} 
+        undo={handleUndo} 
+        redo={handleRedo} 
+        canUndo={canUndo} 
+        canRedo={canRedo} 
+        toggle3DPanel={toggle3DPanel} 
+        is3DPanelOpen={is3DPanelOpen} 
+        onAISolve={handleAISolve} 
+        isAISolving={isAISolving} 
+        isVisible={isUIVisible}
+      />
+      <ColorPicker 
+        isVisible={isUIVisible && (currentTool === 'pen' || currentTool === 'dotted-line' || currentTool === 'text' || is2DShapeTool) && isColorPickerOpen} 
+        color={color} 
+        setColor={setColor} 
+        strokeWidth={strokeWidth} 
+        setStrokeWidth={setStrokeWidth} 
+      />
+      <EraserProperties 
+        isVisible={isUIVisible && currentTool === 'eraser'} 
+        size={eraserWidth} 
+        setSize={setEraserWidth} 
+      />
+      <ThreeDShapesPanel 
+        isVisible={isUIVisible && is3DPanelOpen} 
+        currentTool={currentTool} 
+        setTool={handleSetTool} 
+      />
+      <ShapeProperties 
+        isVisible={isUIVisible && (isAnyShapeTool || (currentTool === 'cursor' && isShapeSelected))} 
+        size={shapeSize} 
+        setSize={setShapeSize} 
+      />
+      <HistoryControls 
+        onUndo={handleUndo} 
+        onRedo={handleRedo} 
+        canUndo={canUndo} 
+        canRedo={canRedo} 
+        isVisible={isUIVisible}
+      />
+      <AIAssistant 
+        isOpen={isUIVisible && isAIPanelOpen} 
+        onClose={() => setIsAIPanelOpen(false)} 
+        isLoading={isAISolving} 
+        response={aiResponse} 
+      />
+      <ZoomControls 
+        zoom={zoom} 
+        onZoomIn={handleZoomIn} 
+        onZoomOut={handleZoomOut} 
+        onReset={handleResetZoom} 
+        showGrid={showGrid} 
+        toggleGrid={() => setShowGrid(!showGrid)} 
+        isDarkMode={isDarkMode}
+        toggleDarkMode={handleToggleDarkMode}
+        isVisible={isUIVisible}
+      />
+      <Whiteboard 
+        ref={whiteboardRef} 
+        tool={currentTool} 
+        color={color} 
+        strokeWidth={strokeWidth} 
+        eraserWidth={eraserWidth} 
+        shapeSize={shapeSize} 
+        showGrid={showGrid} 
+        isDarkMode={isDarkMode}
+        onHistoryChange={handleHistoryChange} 
+        triggerUndo={undoTrigger} 
+        triggerRedo={redoTrigger} 
+        onDrawStart={handleDrawStart} 
+        onZoomChange={setZoom} 
+        onShapeSelect={handleShapeSelect} 
+      />
     </div>
   );
 };
