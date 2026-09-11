@@ -462,6 +462,7 @@ const App: React.FC = () => {
         onAISolve={handleAISolve} 
         isAISolving={isAISolving} 
         isVisible={isUIVisible}
+        isDarkMode={isDarkMode}
       />
       <ColorPicker 
         isVisible={isUIVisible && (currentTool === 'pen' || currentTool === 'dotted-line' || currentTool === 'text' || is2DShapeTool) && isColorPickerOpen} 
@@ -469,21 +470,25 @@ const App: React.FC = () => {
         setColor={setColor} 
         strokeWidth={strokeWidth} 
         setStrokeWidth={setStrokeWidth} 
+        isDarkMode={isDarkMode}
       />
       <EraserProperties 
         isVisible={isUIVisible && currentTool === 'eraser'} 
         size={eraserWidth} 
         setSize={setEraserWidth} 
+        isDarkMode={isDarkMode}
       />
       <ThreeDShapesPanel 
         isVisible={isUIVisible && is3DPanelOpen} 
         currentTool={currentTool} 
         setTool={handleSetTool} 
+        isDarkMode={isDarkMode}
       />
       <ShapeProperties 
         isVisible={isUIVisible && (isAnyShapeTool || (currentTool === 'cursor' && isShapeSelected))} 
         size={shapeSize} 
         setSize={setShapeSize} 
+        isDarkMode={isDarkMode}
       />
       <HistoryControls 
         onUndo={handleUndo} 
@@ -491,12 +496,14 @@ const App: React.FC = () => {
         canUndo={canUndo} 
         canRedo={canRedo} 
         isVisible={isUIVisible}
+        isDarkMode={isDarkMode}
       />
       <AIAssistant 
         isOpen={isUIVisible && isAIPanelOpen} 
         onClose={() => setIsAIPanelOpen(false)} 
         isLoading={isAISolving} 
         response={aiResponse} 
+        isDarkMode={isDarkMode}
       />
       <ZoomControls 
         zoom={zoom} 

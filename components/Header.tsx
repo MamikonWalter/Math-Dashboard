@@ -60,19 +60,23 @@ const Header: React.FC<HeaderProps> = ({
 
   return (
     <div 
-      className={`fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 px-4 flex items-center justify-between z-30 shadow-sm select-none ui-smooth-transition ${
+      className={`fixed top-0 left-0 right-0 h-16 px-4 flex items-center justify-between z-30 shadow-sm select-none ui-smooth-transition transition-colors duration-300 ${
+        isDarkMode 
+          ? 'bg-[#202024] border-b border-[#323238] text-gray-100' 
+          : 'bg-white border-b border-gray-200 text-gray-900'
+      } ${
         isVisible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 -translate-y-full pointer-events-none'
       }`}
     >
       <div className="flex items-center gap-4 pl-2">
         <div className="flex items-center gap-0 select-none cursor-pointer" onClick={() => window.location.reload()}>
-          <span className="text-2xl font-bold text-gray-900 tracking-tight">Mathters</span>
+          <span className={`text-2xl font-bold tracking-tight transition-colors ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Mathters</span>
         </div>
 
-        <div className="h-6 w-px bg-gray-300" />
+        <div className={`h-6 w-px transition-colors ${isDarkMode ? 'bg-[#3f3f46]' : 'bg-gray-300'}`} />
 
         <div className="flex flex-col justify-center">
-            <div className="flex items-center gap-2 text-sm text-gray-900 font-medium h-5">
+            <div className="flex items-center gap-2 text-sm font-medium h-5">
                 {isEditingName ? (
                     <input
                         ref={nameInputRef}
@@ -82,12 +86,20 @@ const Header: React.FC<HeaderProps> = ({
                         onBlur={handleNameSubmit}
                         onKeyDown={handleKeyDown}
                         maxLength={20}
-                        className="bg-white border border-blue-500 rounded px-1 py-0 outline-none text-sm text-gray-900 w-40"
+                        className={`rounded px-1.5 py-0.5 outline-none text-sm w-40 border ${
+                          isDarkMode 
+                            ? 'bg-[#18181b] border-blue-500 text-gray-100' 
+                            : 'bg-white border-blue-500 text-gray-900'
+                        }`}
                     />
                 ) : (
                     <span 
                         onClick={() => setIsEditingName(true)}
-                        className="cursor-pointer hover:bg-gray-100 px-2 py-0.5 rounded transition-colors truncate max-w-[200px]"
+                        className={`cursor-pointer px-2 py-0.5 rounded transition-colors truncate max-w-[200px] ${
+                          isDarkMode 
+                            ? 'text-gray-200 hover:bg-[#2c2c31]' 
+                            : 'text-gray-900 hover:bg-gray-100'
+                        }`}
                         title="Переименовать"
                     >
                         {boardName}
@@ -100,7 +112,11 @@ const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center gap-2">
         <button 
           onClick={onSave}
-          className="px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md font-medium text-sm flex items-center gap-2 transition-colors border border-gray-300"
+          className={`px-3 py-2 rounded-md font-medium text-sm flex items-center gap-2 transition-colors border ${
+            isDarkMode 
+              ? 'text-gray-200 bg-[#28282e] hover:bg-[#32323a] border-[#3f3f46]' 
+              : 'text-gray-700 bg-white hover:bg-gray-100 border-gray-300'
+          }`}
           title="Сохранить проект как JSON"
         >
           <Save className="w-4 h-4" />
@@ -109,7 +125,11 @@ const Header: React.FC<HeaderProps> = ({
 
         <button 
           onClick={() => onExportPNG(boardName)}
-          className="px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md font-medium text-sm flex items-center gap-2 transition-colors border border-gray-300"
+          className={`px-3 py-2 rounded-md font-medium text-sm flex items-center gap-2 transition-colors border ${
+            isDarkMode 
+              ? 'text-gray-200 bg-[#28282e] hover:bg-[#32323a] border-[#3f3f46]' 
+              : 'text-gray-700 bg-white hover:bg-gray-100 border-gray-300'
+          }`}
           title="Экспорт всей доски в PNG"
         >
           <ImageIcon className="w-4 h-4" />
@@ -119,8 +139,10 @@ const Header: React.FC<HeaderProps> = ({
         {onToggleDarkMode && (
           <button 
             onClick={onToggleDarkMode}
-            className={`p-2 rounded-md font-medium text-sm flex items-center justify-center transition-colors border border-gray-300 ${
-              isDarkMode ? 'bg-amber-50 text-amber-500 hover:bg-amber-100' : 'text-gray-700 hover:bg-gray-100'
+            className={`p-2 rounded-md font-medium text-sm flex items-center justify-center transition-colors border ${
+              isDarkMode 
+                ? 'bg-amber-400/15 text-amber-400 hover:bg-amber-400/25 border-[#3f3f46]' 
+                : 'text-gray-700 bg-white hover:bg-gray-100 border-gray-300'
             }`}
             title={isDarkMode ? "Светлая тема доски (D)" : "Тёмная тема доски (D)"}
           >
@@ -128,11 +150,15 @@ const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        <div className="h-6 w-px bg-gray-300 mx-1" />
+        <div className={`h-6 w-px mx-1 transition-colors ${isDarkMode ? 'bg-[#3f3f46]' : 'bg-gray-300'}`} />
 
         <button 
           onClick={handleOpenClick}
-          className="px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-md font-medium text-sm flex items-center gap-2 transition-colors border border-gray-300"
+          className={`px-3 py-2 rounded-md font-medium text-sm flex items-center gap-2 transition-colors border ${
+            isDarkMode 
+              ? 'text-gray-200 bg-[#28282e] hover:bg-[#32323a] border-[#3f3f46]' 
+              : 'text-gray-700 bg-white hover:bg-gray-100 border-gray-300'
+          }`}
           title="Импортировать JSON проект"
         >
           <FolderOpen className="w-4 h-4" />
@@ -148,7 +174,7 @@ const Header: React.FC<HeaderProps> = ({
 
         <button 
           onClick={onClear}
-          className="ml-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-sm flex items-center gap-2 transition-colors"
+          className="ml-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
         >
           <Share2 className="w-4 h-4" />
           Поделиться
