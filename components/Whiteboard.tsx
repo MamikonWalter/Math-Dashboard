@@ -97,6 +97,31 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     startHeight: number;
   } | null>(null);
 
+  // Shape & Insertion Rotation / Resize Refs
+  const isRotatingRef = useRef<{
+    strokeIndex: number;
+    startMouseAngle: number;
+    startRotation: number;
+    center: Point;
+  } | null>(null);
+
+  const isResizingShapeRef = useRef<{
+    strokeIndex: number;
+    handle: string;
+    startCenter: Point;
+    startWorldPos: Point;
+    startWidth: number;
+    startHeight: number;
+    rotation: number;
+    aspectRatio: number;
+  } | null>(null);
+
+  const hoveredBorderRef = useRef<{
+    strokeIndex: number;
+    handle: string;
+    cursor: string;
+  } | null>(null);
+
   // Clipboard Ref
   const clipboardRef = useRef<Stroke[]>([]);
 
@@ -123,7 +148,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       if (stroke.tool === 'image' && stroke.imageUrl) {
           const img = imageCache.current[stroke.imageUrl];
           const ratio = img ? (img.naturalHeight / img.naturalWidth) : 1;
-          const h = stroke.width * ratio;
+          const h = stroke.height || (stroke.width * ratio);
           return { w: stroke.width, h };
       }
       if (stroke.tool === 'text') {
@@ -135,17 +160,38 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           const maxLineLength = Math.max(...lines.map(l => l.length), 1);
           return { w: maxLineLength * fontSize * 0.6, h: lines.length * fontSize * 1.2 };
       }
-      return { w: stroke.width, h: stroke.width };
+      return { w: stroke.width, h: stroke.height || stroke.width };
   };
 
   const getBoundingBox = (stroke: Stroke) => {
+      const { w, h } = getStrokeBounds(stroke);
+      const rot = stroke.rotation || 0;
       if (shapeTools.includes(stroke.tool) || stroke.tool === 'image' || stroke.tool === 'text') {
-          const center = stroke.points[0];
-          const { w, h } = getStrokeBounds(stroke);
-          if (stroke.tool === 'text') {
-              return { minX: center.x, minY: center.y, maxX: center.x + w, maxY: center.y + h };
+          const center = (shapeTools.includes(stroke.tool) || stroke.tool === 'image')
+              ? stroke.points[0]
+              : { x: (stroke.points[0]?.x || 0) + w / 2, y: (stroke.points[0]?.y || 0) + h / 2 };
+          if (!center) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+          if (rot === 0) {
+              return { minX: center.x - w / 2, minY: center.y - h / 2, maxX: center.x + w / 2, maxY: center.y + h / 2 };
           }
-          return { minX: center.x - w / 2, minY: center.y - h / 2, maxX: center.x + w / 2, maxY: center.y + h / 2 };
+          const hw = w / 2;
+          const hh = h / 2;
+          const cos = Math.cos(rot);
+          const sin = Math.sin(rot);
+          const corners = [
+              { x: -hw * cos - -hh * sin, y: -hw * sin + -hh * cos },
+              { x:  hw * cos - -hh * sin, y:  hw * sin + -hh * cos },
+              { x:  hw * cos -  hh * sin, y:  hw * sin +  hh * cos },
+              { x: -hw * cos -  hh * sin, y: -hw * sin +  hh * cos }
+          ];
+          const xs = corners.map(c => center.x + c.x);
+          const ys = corners.map(c => center.y + c.y);
+          return {
+              minX: Math.min(...xs),
+              minY: Math.min(...ys),
+              maxX: Math.max(...xs),
+              maxY: Math.max(...ys)
+          };
       } else {
           let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
           stroke.points.forEach(p => {
@@ -155,7 +201,29 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
               if (p.y > maxY) maxY = p.y;
           });
           const padding = stroke.width / 2;
-          return { minX: minX - padding, minY: minY - padding, maxX: maxX + padding, maxY: maxY + padding };
+          if (rot === 0 || !isFinite(minX)) {
+              return { minX: minX - padding, minY: minY - padding, maxX: maxX + padding, maxY: maxY + padding };
+          }
+          const cx = (minX + maxX) / 2;
+          const cy = (minY + maxY) / 2;
+          const hw = (maxX - minX) / 2 + padding;
+          const hh = (maxY - minY) / 2 + padding;
+          const cos = Math.cos(rot);
+          const sin = Math.sin(rot);
+          const corners = [
+              { x: -hw * cos - -hh * sin, y: -hw * sin + -hh * cos },
+              { x:  hw * cos - -hh * sin, y:  hw * sin + -hh * cos },
+              { x:  hw * cos -  hh * sin, y:  hw * sin +  hh * cos },
+              { x: -hw * cos -  hh * sin, y: -hw * sin +  hh * cos }
+          ];
+          const xs = corners.map(c => cx + c.x);
+          const ys = corners.map(c => cy + c.y);
+          return {
+              minX: Math.min(...xs),
+              minY: Math.min(...ys),
+              maxX: Math.max(...xs),
+              maxY: Math.max(...ys)
+          };
       }
   };
 
@@ -180,11 +248,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       const deg = Math.atan2(dy, dx) * (180 / Math.PI);
       const absDeg = Math.abs(deg); // 0 to 180
 
-      // Horizontal snapping: within 10 degrees of 0° or 180°
-      const isHorizontal = absDeg <= 10 || absDeg >= 170;
+      // Horizontal snapping: within 5 degrees of 0° or 180° (halved from 10°)
+      const isHorizontal = absDeg <= 5 || absDeg >= 175;
 
-      // Vertical snapping: within 10 degrees of 90° (80° to 100°)
-      const isVertical = absDeg >= 80 && absDeg <= 100;
+      // Vertical snapping: within 5 degrees of 90° (85° to 95°) (halved from 10°)
+      const isVertical = absDeg >= 85 && absDeg <= 95;
 
       if (isHorizontal) {
           return { x: p1.x, y: p0.y };
@@ -196,8 +264,119 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       return p1;
   };
 
+  // Cursor rotation helper: maps rotated handle angles to correct CSS cursor
+  const getRotatedCursor = (base: string, angle: number = 0): string => {
+      let deg = (angle * (180 / Math.PI)) % 180;
+      if (deg < 0) deg += 180;
+      if (base === 'ns-resize') {
+          if (deg >= 45 && deg < 135) return 'ew-resize';
+          return 'ns-resize';
+      } else if (base === 'ew-resize') {
+          if (deg >= 45 && deg < 135) return 'ns-resize';
+          return 'ew-resize';
+      } else if (base === 'nwse-resize') {
+          if (deg >= 45 && deg < 135) return 'nesw-resize';
+          return 'nwse-resize';
+      } else if (base === 'nesw-resize') {
+          if (deg >= 45 && deg < 135) return 'nwse-resize';
+          return 'nesw-resize';
+      }
+      return base;
+  };
+
+  // Handle and border hit detection for shapes, images, and text
+  const getHandleOrBorderAtPoint = (point: Point, stroke: Stroke): { type: string; cursor: string } | null => {
+      const isShape = shapeTools.includes(stroke.tool);
+      const isImage = stroke.tool === 'image';
+      const isText = stroke.tool === 'text';
+      if (!isShape && !isImage && !isText) return null;
+
+      const { w, h } = getStrokeBounds(stroke);
+      const hw = w / 2;
+      const hh = h / 2;
+      const rot = stroke.rotation || 0;
+      const center = (isShape || isImage)
+          ? stroke.points[0]
+          : { x: (stroke.points[0]?.x || 0) + hw, y: (stroke.points[0]?.y || 0) + hh };
+
+      if (!center) return null;
+
+      // Transform world point into stroke's local coordinate system (origin at center, unrotated)
+      const dx = point.x - center.x;
+      const dy = point.y - center.y;
+      const cos = Math.cos(-rot);
+      const sin = Math.sin(-rot);
+      const lx = dx * cos - dy * sin;
+      const ly = dx * sin + dy * cos;
+
+      const scale = scaleRef.current || 1;
+      const cornerRadius = 14 / scale;
+      const edgeDist = 9 / scale;
+      const rotHandleY = -hh - 24 / scale;
+      const rotRadius = 12 / scale;
+
+      // 1. Rotation knob check
+      if (Math.hypot(lx, ly - rotHandleY) <= rotRadius) {
+          return { type: 'rot', cursor: 'grab' };
+      }
+
+      // 2. Corner handles
+      if (Math.hypot(lx - (-hw), ly - (-hh)) <= cornerRadius) {
+          return { type: 'nw', cursor: getRotatedCursor('nwse-resize', rot) };
+      }
+      if (Math.hypot(lx - hw, ly - (-hh)) <= cornerRadius) {
+          return { type: 'ne', cursor: getRotatedCursor('nesw-resize', rot) };
+      }
+      if (Math.hypot(lx - hw, ly - hh) <= cornerRadius) {
+          return { type: 'se', cursor: getRotatedCursor('nwse-resize', rot) };
+      }
+      if (Math.hypot(lx - (-hw), ly - hh) <= cornerRadius) {
+          return { type: 'sw', cursor: getRotatedCursor('nesw-resize', rot) };
+      }
+
+      // 3. Borders / edge handles
+      const inXRange = lx >= -hw - edgeDist && lx <= hw + edgeDist;
+      const inYRange = ly >= -hh - edgeDist && ly <= hh + edgeDist;
+
+      if (inXRange && Math.abs(ly - (-hh)) <= edgeDist) {
+          return { type: 'n', cursor: getRotatedCursor('ns-resize', rot) };
+      }
+      if (inXRange && Math.abs(ly - hh) <= edgeDist) {
+          return { type: 's', cursor: getRotatedCursor('ns-resize', rot) };
+      }
+      if (inYRange && Math.abs(lx - (-hw)) <= edgeDist) {
+          return { type: 'w', cursor: getRotatedCursor('ew-resize', rot) };
+      }
+      if (inYRange && Math.abs(lx - hw) <= edgeDist) {
+          return { type: 'e', cursor: getRotatedCursor('ew-resize', rot) };
+      }
+
+      // 4. Inside body
+      if (Math.abs(lx) <= hw && Math.abs(ly) <= hh) {
+          return { type: 'body', cursor: 'move' };
+      }
+
+      return null;
+  };
+
   // --- Internal Rendering for Export/Full Snapshot ---
   const drawStrokeOnCtx = (ctx: CanvasRenderingContext2D, stroke: Stroke) => {
+    ctx.save();
+    const rot = stroke.rotation || 0;
+    if (rot !== 0) {
+        const { w, h } = getStrokeBounds(stroke);
+        const center = (shapeTools.includes(stroke.tool) || stroke.tool === 'image')
+            ? stroke.points[0]
+            : (stroke.tool === 'text'
+                ? { x: (stroke.points[0]?.x || 0) + w / 2, y: (stroke.points[0]?.y || 0) + h / 2 }
+                : { x: (getBoundingBox(stroke).minX + getBoundingBox(stroke).maxX) / 2, y: (getBoundingBox(stroke).minY + getBoundingBox(stroke).maxY) / 2 });
+        if (center) {
+            ctx.translate(center.x, center.y);
+            ctx.rotate(rot);
+            ctx.translate(-center.x, -center.y);
+        }
+    }
+
     if (stroke.tool === 'image' && stroke.imageUrl) {
         let img = imageCache.current[stroke.imageUrl];
         if (!img) {
@@ -208,17 +387,18 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         }
         if (img.complete && img.naturalWidth > 0) {
             const ratio = img.naturalHeight / img.naturalWidth;
-            const h = stroke.width * ratio;
+            const h = stroke.height || (stroke.width * ratio);
             const x = stroke.points[0].x - stroke.width / 2;
             const y = stroke.points[0].y - h / 2;
             ctx.drawImage(img, x, y, stroke.width, h);
         }
+        ctx.restore();
         return;
     }
 
     if (stroke.tool === 'text') {
         const p = stroke.points[0];
-        if (!p) return;
+        if (!p) { ctx.restore(); return; }
         const fontSize = stroke.width || 20;
         ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
         ctx.fillStyle = stroke.color;
@@ -241,15 +421,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                 ctx.fillText(currentLine, p.x, p.y + (i + lineCount) * fontSize * 1.2);
             } else ctx.fillText(line, p.x, p.y + i * fontSize * 1.2);
         });
+        ctx.restore();
         return;
     }
 
     if (shapeTools.includes(stroke.tool)) {
         drawShapeOnCtx(ctx, stroke);
+        ctx.restore();
         return;
     }
 
-    if (stroke.points.length < 1) return;
+    if (stroke.points.length < 1) { ctx.restore(); return; }
     ctx.beginPath();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -296,21 +478,33 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalCompositeOperation = 'source-over';
+    ctx.restore();
   };
 
   const drawShapeOnCtx = (ctx: CanvasRenderingContext2D, stroke: Stroke) => {
       const { points, width: size, tool: shapeType, color } = stroke;
       if (!points[0]) return;
       const { x, y } = points[0];
+      const w = stroke.width;
+      const h = stroke.height || stroke.width;
+
+      ctx.save();
       ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
       const drawLine = (p1: Point, p2: Point, isDashed: boolean = false) => {
           ctx.beginPath(); if (isDashed) ctx.setLineDash([5, 5]); else ctx.setLineDash([]);
           ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); ctx.setLineDash([]);
       };
+
+      if (h !== size && size > 0) {
+          ctx.translate(x, y);
+          ctx.scale(1, h / size);
+          ctx.translate(-x, -y);
+      }
+
       switch (shapeType) {
           case 'square': ctx.rect(x - size/2, y - size/2, size, size); ctx.stroke(); break;
           case 'circle': ctx.beginPath(); ctx.arc(x, y, size/2, 0, Math.PI*2); ctx.stroke(); break;
-          case 'triangle': { const h = size * (Math.sqrt(3)/2); ctx.beginPath(); ctx.moveTo(x, y - h/2); ctx.lineTo(x - size/2, y + h/2); ctx.lineTo(x + size/2, y + h/2); ctx.closePath(); ctx.stroke(); break; }
+          case 'triangle': { const th = size * (Math.sqrt(3)/2); ctx.beginPath(); ctx.moveTo(x, y - th/2); ctx.lineTo(x - size/2, y + th/2); ctx.lineTo(x + size/2, y + th/2); ctx.closePath(); ctx.stroke(); break; }
           case 'diamond': { ctx.beginPath(); ctx.moveTo(x, y - size/2); ctx.lineTo(x + size/2, y); ctx.lineTo(x, y + size/2); ctx.lineTo(x - size/2, y); ctx.closePath(); ctx.stroke(); break; }
           case 'star': {
               const outerRadius = size / 2, innerRadius = size / 4, spikes = 5;
@@ -323,19 +517,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
               ctx.closePath(); ctx.stroke(); break;
           }
           case 'speech': {
-               const w = size, h = size * 0.75, r = 10, tailSize = 10;
-               ctx.beginPath(); ctx.moveTo(x - w/2 + r, y - h/2); ctx.lineTo(x + w/2 - r, y - h/2);
-               ctx.quadraticCurveTo(x + w/2, y - h/2, x + w/2, y - h/2 + r); ctx.lineTo(x + w/2, y + h/2 - r);
-               ctx.quadraticCurveTo(x + w/2, y + h/2, x + w/2 - r, y + h/2); ctx.lineTo(x - w/2 + 20 + tailSize, y + h/2);
-               ctx.lineTo(x - w/2 + 10, y + h/2 + tailSize); ctx.lineTo(x - w/2 + 20, y + h/2); ctx.lineTo(x - w/2 + r, y + h/2);
-               ctx.quadraticCurveTo(x - w/2, y + h/2, x - w/2, y + h/2 - r); ctx.lineTo(x - w/2, y - h/2 + r);
-               ctx.quadraticCurveTo(x - w/2, y - h/2, x - w/2 + r, y - h/2); ctx.stroke(); break;
+               const sw = size, sh = size * 0.75, r = 10, tailSize = 10;
+               ctx.beginPath(); ctx.moveTo(x - sw/2 + r, y - sh/2); ctx.lineTo(x + sw/2 - r, y - sh/2);
+               ctx.quadraticCurveTo(x + sw/2, y - sh/2, x + sw/2, y - sh/2 + r); ctx.lineTo(x + sw/2, y + sh/2 - r);
+               ctx.quadraticCurveTo(x + sw/2, y + sh/2, x + sw/2 - r, y + sh/2); ctx.lineTo(x - sw/2 + 20 + tailSize, y + sh/2);
+               ctx.lineTo(x - sw/2 + 10, y + sh/2 + tailSize); ctx.lineTo(x - sw/2 + 20, y + sh/2); ctx.lineTo(x - sw/2 + r, y + sh/2);
+               ctx.quadraticCurveTo(x - sw/2, y + sh/2, x - sw/2, y + sh/2 - r); ctx.lineTo(x - sw/2, y - sh/2 + r);
+               ctx.quadraticCurveTo(x - sw/2, y - sh/2, x - sw/2 + r, y - sh/2); ctx.stroke(); break;
           }
           case 'arrow': {
               const headW = size * 0.4;
-              const w = size, h = size * 0.5;
-              ctx.beginPath(); ctx.moveTo(x - w/2, y - h/4); ctx.lineTo(x + w/2 - headW, y - h/4); ctx.lineTo(x + w/2 - headW, y - h/2);
-              ctx.lineTo(x + w/2, y); ctx.lineTo(x + w/2 - headW, y + h/2); ctx.lineTo(x + w/2 - headW, y + h/4); ctx.lineTo(x - w/2, y + h/4); ctx.closePath(); ctx.stroke(); break;
+              const sw = size, sh = size * 0.5;
+              ctx.beginPath(); ctx.moveTo(x - sw/2, y - sh/4); ctx.lineTo(x + sw/2 - headW, y - sh/4); ctx.lineTo(x + sw/2 - headW, y - sh/2);
+              ctx.lineTo(x + sw/2, y); ctx.lineTo(x + sw/2 - headW, y + sh/2); ctx.lineTo(x + sw/2 - headW, y + sh/4); ctx.lineTo(x - sw/2, y + sh/4); ctx.closePath(); ctx.stroke(); break;
           }
           case 'cube': {
               const s = size * 0.7, offset = s * 0.4;
@@ -345,11 +539,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
               drawLine(fBL, bBL, true); drawLine(bBL, bTL, true); drawLine(bBL, bBR, true); break;
           }
           case 'cylinder': {
-              const w = size * 0.6, h = size * 0.8, eH = w * 0.3, tCy = y - h/2, bCy = y + h/2;
-              ctx.beginPath(); ctx.ellipse(x, tCy, w, eH, 0, 0, Math.PI * 2); ctx.stroke();
-              drawLine({x: x - w, y: tCy}, {x: x - w, y: bCy}); drawLine({x: x + w, y: tCy}, {x: x + w, y: bCy});
-              ctx.beginPath(); ctx.ellipse(x, bCy, w, eH, 0, 0, Math.PI); ctx.stroke();
-              ctx.beginPath(); ctx.setLineDash([5, 5]); ctx.ellipse(x, bCy, w, eH, 0, Math.PI, Math.PI * 2); ctx.stroke();
+              const cw = size * 0.6, ch = size * 0.8, eH = cw * 0.3, tCy = y - ch/2, bCy = y + ch/2;
+              ctx.beginPath(); ctx.ellipse(x, tCy, cw, eH, 0, 0, Math.PI * 2); ctx.stroke();
+              drawLine({x: x - cw, y: tCy}, {x: x - cw, y: bCy}); drawLine({x: x + cw, y: tCy}, {x: x + cw, y: bCy});
+              ctx.beginPath(); ctx.ellipse(x, bCy, cw, eH, 0, 0, Math.PI); ctx.stroke();
+              ctx.beginPath(); ctx.setLineDash([5, 5]); ctx.ellipse(x, bCy, cw, eH, 0, Math.PI, Math.PI * 2); ctx.stroke();
               ctx.setLineDash([]); break;
           }
           case 'sphere': {
@@ -358,20 +552,21 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
               ctx.beginPath(); ctx.setLineDash([5, 5]); ctx.ellipse(x, y, r, r * 0.3, 0, Math.PI, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); break;
           }
           case 'pyramid': {
-               const w = size * 0.8, h = size * 0.8;
-               const fl = { x: x - w/2, y: y + h/2 }, fr = { x: x + w/2, y: y + h/2 }, br = { x: x + w*0.75, y: y + h/2 - w/2 }, bl = { x: x - w/4, y: y + h/2 - w/2 };
-               const apex = { x: x + w/8, y: y - h/2 };
+               const pw = size * 0.8, ph = size * 0.8;
+               const fl = { x: x - pw/2, y: y + ph/2 }, fr = { x: x + pw/2, y: y + ph/2 }, br = { x: x + pw*0.75, y: y + ph/2 - pw/2 }, bl = { x: x - pw/4, y: y + ph/2 - pw/2 };
+               const apex = { x: x + pw/8, y: y - ph/2 };
                drawLine(fl, fr); drawLine(fr, br); drawLine(fl, apex); drawLine(fr, apex); drawLine(br, apex);
                drawLine(fl, bl, true); drawLine(bl, br, true); drawLine(bl, apex, true); break;
           }
           case 'prism': {
-              const w = size * 0.8, h = size * 0.6, d = size * 0.5;
-              const fT = { x, y: y - h/2 }, fL = { x: x - d, y: y + h/2 }, fR = { x: x + d, y: y + h/2 };
-              const sX = w * 0.5, sY = -w * 0.2, bT = { x: fT.x + sX, y: fT.y + sY }, bL = { x: fL.x + sX, y: fL.y + sY }, bR = { x: fR.x + sX, y: fR.y + sY };
+              const pw = size * 0.8, ph = size * 0.6, pd = size * 0.5;
+              const fT = { x, y: y - ph/2 }, fL = { x: x - pd, y: y + ph/2 }, fR = { x: x + pd, y: y + ph/2 };
+              const sX = pw * 0.5, sY = -pw * 0.2, bT = { x: fT.x + sX, y: fT.y + sY }, bL = { x: fL.x + sX, y: fL.y + sY }, bR = { x: fR.x + sX, y: fR.y + sY };
               drawLine(fT, fL); drawLine(fL, fR); drawLine(fR, fT); drawLine(fT, bT); drawLine(fR, bR); drawLine(bT, bR);
               drawLine(fL, bL, true); drawLine(bL, bT, true); drawLine(bL, bR, true); break;
           }
       }
+      ctx.restore();
   };
 
   const drawCodeBlockOnCtx = (ctx: CanvasRenderingContext2D, block: CodeBlockItem, isDark: boolean) => {
@@ -671,19 +866,125 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     if (showGrid) drawGrid(ctx);
     strokesRef.current.forEach(stroke => drawStrokeOnCtx(ctx, stroke));
     if (selectedIndicesRef.current.size > 0) {
-        ctx.save();
-        ctx.strokeStyle = '#0066ff';
-        ctx.lineWidth = 2 / scale;
-        ctx.setLineDash([5 / scale, 5 / scale]);
-        // FIXED: Explicitly typing idx as number to avoid 'unknown' index errors
         selectedIndicesRef.current.forEach((idx: number) => {
             const stroke = strokesRef.current[idx];
-            if (stroke) {
+            if (!stroke) return;
+            const isShapeOrInsertion = shapeTools.includes(stroke.tool) || stroke.tool === 'image' || stroke.tool === 'text';
+            const { w, h } = getStrokeBounds(stroke);
+            const rot = stroke.rotation || 0;
+            const center = (shapeTools.includes(stroke.tool) || stroke.tool === 'image')
+                ? stroke.points[0]
+                : (stroke.tool === 'text'
+                    ? { x: (stroke.points[0]?.x || 0) + w / 2, y: (stroke.points[0]?.y || 0) + h / 2 }
+                    : { x: (getBoundingBox(stroke).minX + getBoundingBox(stroke).maxX) / 2, y: (getBoundingBox(stroke).minY + getBoundingBox(stroke).maxY) / 2 });
+
+            if (!center) return;
+
+            ctx.save();
+            ctx.translate(center.x, center.y);
+            ctx.rotate(rot);
+
+            if (isShapeOrInsertion) {
+                // Bounding border
+                ctx.strokeStyle = '#2563eb';
+                ctx.lineWidth = 1.5 / scale;
+                ctx.setLineDash([4 / scale, 4 / scale]);
+                ctx.strokeRect(-w / 2, -h / 2, w, h);
+                ctx.setLineDash([]);
+
+                // Rotation stem and knob
+                ctx.beginPath();
+                ctx.strokeStyle = '#2563eb';
+                ctx.lineWidth = 1.5 / scale;
+                ctx.moveTo(0, -h / 2);
+                ctx.lineTo(0, -h / 2 - 24 / scale);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(0, -h / 2 - 24 / scale, 5 / scale, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                ctx.strokeStyle = '#2563eb';
+                ctx.lineWidth = 2 / scale;
+                ctx.stroke();
+
+                // 8 resize handles
+                const handleSize = 8 / scale;
+                const handles = [
+                    { x: -w / 2, y: -h / 2 },
+                    { x: 0, y: -h / 2 },
+                    { x: w / 2, y: -h / 2 },
+                    { x: w / 2, y: 0 },
+                    { x: w / 2, y: h / 2 },
+                    { x: 0, y: h / 2 },
+                    { x: -w / 2, y: h / 2 },
+                    { x: -w / 2, y: 0 }
+                ];
+                handles.forEach(pt => {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(pt.x - handleSize / 2, pt.y - handleSize / 2, handleSize, handleSize);
+                    ctx.strokeStyle = '#2563eb';
+                    ctx.lineWidth = 1.5 / scale;
+                    ctx.strokeRect(pt.x - handleSize / 2, pt.y - handleSize / 2, handleSize, handleSize);
+                });
+
+                // If actively rotating this stroke, draw rotation angle badge
+                if (isRotatingRef.current && isRotatingRef.current.strokeIndex === idx) {
+                    let deg = Math.round(rot * (180 / Math.PI)) % 360;
+                    if (deg < 0) deg += 360;
+                    const text = `${deg}°`;
+                    const badgeY = -h / 2 - 44 / scale;
+                    ctx.font = `bold ${12 / scale}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+                    const tw = ctx.measureText(text).width;
+                    const padX = 7 / scale;
+                    const bw = tw + padX * 2;
+                    const bh = 20 / scale;
+                    ctx.fillStyle = '#2563eb';
+                    ctx.beginPath();
+                    if (typeof (ctx as any).roundRect === 'function') {
+                        (ctx as any).roundRect(-bw / 2, badgeY - bh / 2, bw, bh, 4 / scale);
+                    } else {
+                        ctx.rect(-bw / 2, badgeY - bh / 2, bw, bh);
+                    }
+                    ctx.fill();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(text, 0, badgeY);
+                }
+            } else {
                 const bounds = getBoundingBox(stroke);
+                ctx.restore();
+                ctx.save();
+                ctx.strokeStyle = '#0066ff';
+                ctx.lineWidth = 2 / scale;
+                ctx.setLineDash([5 / scale, 5 / scale]);
                 ctx.strokeRect(bounds.minX, bounds.minY, bounds.maxX - bounds.minX, bounds.maxY - bounds.minY);
             }
+            ctx.restore();
         });
-        ctx.restore();
+    }
+
+    // Hovered border highlight for unselected shapes/images
+    if (hoveredBorderRef.current && !selectedIndicesRef.current.has(hoveredBorderRef.current.strokeIndex)) {
+        const hStroke = strokesRef.current[hoveredBorderRef.current.strokeIndex];
+        if (hStroke) {
+            const { w, h } = getStrokeBounds(hStroke);
+            const rot = hStroke.rotation || 0;
+            const center = (shapeTools.includes(hStroke.tool) || hStroke.tool === 'image')
+                ? hStroke.points[0]
+                : { x: (hStroke.points[0]?.x || 0) + w / 2, y: (hStroke.points[0]?.y || 0) + h / 2 };
+            if (center) {
+                ctx.save();
+                ctx.translate(center.x, center.y);
+                ctx.rotate(rot);
+                ctx.strokeStyle = 'rgba(59, 130, 246, 0.75)';
+                ctx.lineWidth = 1.5 / scale;
+                ctx.setLineDash([4 / scale, 4 / scale]);
+                ctx.strokeRect(-w / 2, -h / 2, w, h);
+                ctx.restore();
+            }
+        }
     }
     if (isSelectingRef.current && selectionStartRef.current && selectionCurrentRef.current) {
         const start = selectionStartRef.current;
@@ -794,6 +1095,88 @@ print(f"solve({val}) =", solve(val))
     }
 
     if (tool === 'cursor') {
+        // 1. Check if clicking rotation knob or resize handle on ALREADY selected stroke
+        if (selectedIndicesRef.current.size === 1) {
+            const [selectedIdx] = Array.from(selectedIndicesRef.current);
+            const selStroke = strokesRef.current[selectedIdx];
+            if (selStroke) {
+                const target = getHandleOrBorderAtPoint(worldPos, selStroke);
+                if (target) {
+                    const { w, h } = getStrokeBounds(selStroke);
+                    const center = (shapeTools.includes(selStroke.tool) || selStroke.tool === 'image')
+                        ? selStroke.points[0]
+                        : { x: (selStroke.points[0]?.x || 0) + w / 2, y: (selStroke.points[0]?.y || 0) + h / 2 };
+
+                    if (target.type === 'rot') {
+                        const startAngle = Math.atan2(worldPos.y - center.y, worldPos.x - center.x);
+                        isRotatingRef.current = {
+                            strokeIndex: selectedIdx,
+                            startMouseAngle: startAngle,
+                            startRotation: selStroke.rotation || 0,
+                            center
+                        };
+                        render();
+                        return;
+                    } else if (target.type !== 'body') {
+                        isResizingShapeRef.current = {
+                            strokeIndex: selectedIdx,
+                            handle: target.type,
+                            startCenter: center,
+                            startWorldPos: worldPos,
+                            startWidth: w,
+                            startHeight: h,
+                            rotation: selStroke.rotation || 0,
+                            aspectRatio: h / (w || 1)
+                        };
+                        render();
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 2. Check if clicking on ANY shape or image border / handle on the whiteboard
+        for (let i = strokesRef.current.length - 1; i >= 0; i--) {
+            const s = strokesRef.current[i];
+            if (shapeTools.includes(s.tool) || s.tool === 'image' || s.tool === 'text') {
+                const target = getHandleOrBorderAtPoint(worldPos, s);
+                if (target && target.type !== 'body') {
+                    selectedIndicesRef.current.clear();
+                    selectedIndicesRef.current.add(i);
+                    if (onShapeSelect) {
+                        onShapeSelect(Math.round(s.width / PIXELS_PER_PERCENT));
+                    }
+                    const { w, h } = getStrokeBounds(s);
+                    const center = (shapeTools.includes(s.tool) || s.tool === 'image')
+                        ? s.points[0]
+                        : { x: (s.points[0]?.x || 0) + w / 2, y: (s.points[0]?.y || 0) + h / 2 };
+
+                    if (target.type === 'rot') {
+                        const startAngle = Math.atan2(worldPos.y - center.y, worldPos.x - center.x);
+                        isRotatingRef.current = {
+                            strokeIndex: i,
+                            startMouseAngle: startAngle,
+                            startRotation: s.rotation || 0,
+                            center
+                        };
+                    } else {
+                        isResizingShapeRef.current = {
+                            strokeIndex: i,
+                            handle: target.type,
+                            startCenter: center,
+                            startWorldPos: worldPos,
+                            startWidth: w,
+                            startHeight: h,
+                            rotation: s.rotation || 0,
+                            aspectRatio: h / (w || 1)
+                        };
+                    }
+                    render();
+                    return;
+                }
+            }
+        }
+
         let foundIndex = -1;
         for (let i = strokesRef.current.length - 1; i >= 0; i--) {
             if (hitTest(worldPos, strokesRef.current[i])) {
@@ -864,6 +1247,87 @@ print(f"solve({val}) =", solve(val))
        setCamTick(t => t + 1);
        render(); return;
     }
+
+    if (isRotatingRef.current) {
+        const { strokeIndex, startMouseAngle, startRotation, center } = isRotatingRef.current;
+        const stroke = strokesRef.current[strokeIndex];
+        if (stroke) {
+            const worldPos = screenToWorld(coords.x, coords.y);
+            const currentAngle = Math.atan2(worldPos.y - center.y, worldPos.x - center.x);
+            const deltaAngle = currentAngle - startMouseAngle;
+            let newRotation = startRotation + deltaAngle;
+
+            const isShift = (e as React.MouseEvent).shiftKey;
+            if (isShift) {
+                const step = Math.PI / 12; // 15 degrees
+                newRotation = Math.round(newRotation / step) * step;
+            } else {
+                const snapThreshold = 3.5 * (Math.PI / 180);
+                const cardinals = [0, Math.PI / 2, Math.PI, -Math.PI / 2, -Math.PI, 2 * Math.PI];
+                for (const card of cardinals) {
+                    if (Math.abs(newRotation - card) < snapThreshold) {
+                        newRotation = card;
+                        break;
+                    }
+                }
+            }
+            stroke.rotation = newRotation;
+            render();
+        }
+        return;
+    }
+
+    if (isResizingShapeRef.current) {
+        const { strokeIndex, handle, startCenter, startWidth, startHeight, rotation, aspectRatio } = isResizingShapeRef.current;
+        const stroke = strokesRef.current[strokeIndex];
+        if (stroke) {
+            const worldPos = screenToWorld(coords.x, coords.y);
+            const dx = worldPos.x - startCenter.x;
+            const dy = worldPos.y - startCenter.y;
+            const cos = Math.cos(-rotation);
+            const sin = Math.sin(-rotation);
+            const lx = dx * cos - dy * sin;
+            const ly = dx * sin + dy * cos;
+
+            let newWidth = startWidth;
+            let newHeight = startHeight;
+
+            if (handle === 'e' || handle === 'w') {
+                newWidth = Math.max(20, Math.round(Math.abs(lx) * 2));
+                if (stroke.tool === 'image') {
+                    newHeight = Math.round(newWidth * aspectRatio);
+                } else {
+                    newHeight = newWidth;
+                }
+            } else if (handle === 'n' || handle === 's') {
+                newHeight = Math.max(20, Math.round(Math.abs(ly) * 2));
+                if (stroke.tool === 'image') {
+                    newWidth = Math.round(newHeight / (aspectRatio || 1));
+                } else {
+                    newWidth = newHeight;
+                }
+            } else {
+                const currentDist = Math.hypot(lx, ly);
+                const startDist = Math.hypot(startWidth / 2, startHeight / 2) || 1;
+                const scaleFactor = currentDist / startDist;
+                newWidth = Math.max(20, Math.round(startWidth * scaleFactor));
+                if (stroke.tool === 'image') {
+                    newHeight = Math.round(newWidth * aspectRatio);
+                } else {
+                    newHeight = newWidth;
+                }
+            }
+
+            stroke.width = newWidth;
+            stroke.height = newHeight;
+            if (onShapeSelect && (shapeTools.includes(stroke.tool) || stroke.tool === 'image')) {
+                onShapeSelect(Math.round(newWidth / PIXELS_PER_PERCENT));
+            }
+            render();
+        }
+        return;
+    }
+
     if (isResizingTextRef.current && activeTextInput) {
         setActiveTextInput(prev => prev ? { ...prev, width: Math.max(50, screenToWorld(coords.x, coords.y).x - activeTextInput.x) } : null);
         return;
@@ -899,11 +1363,66 @@ print(f"solve({val}) =", solve(val))
         } else currentStrokeRef.current.points.push(worldPos);
         render();
     }
+
+    // Hover cursor feedback in cursor mode when not interacting
+    if (tool === 'cursor' && !isDraggingSelectionRef.current && !isSelectingRef.current) {
+        const worldPos = screenToWorld(coords.x, coords.y);
+        let hoveredTarget: { strokeIndex: number; handle: string; cursor: string } | null = null;
+
+        if (selectedIndicesRef.current.size === 1) {
+            const [selectedIdx] = Array.from(selectedIndicesRef.current);
+            const selStroke = strokesRef.current[selectedIdx];
+            if (selStroke) {
+                const target = getHandleOrBorderAtPoint(worldPos, selStroke);
+                if (target) {
+                    hoveredTarget = { strokeIndex: selectedIdx, handle: target.type, cursor: target.cursor };
+                }
+            }
+        }
+
+        if (!hoveredTarget) {
+            for (let i = strokesRef.current.length - 1; i >= 0; i--) {
+                const s = strokesRef.current[i];
+                if (shapeTools.includes(s.tool) || s.tool === 'image' || s.tool === 'text') {
+                    const target = getHandleOrBorderAtPoint(worldPos, s);
+                    if (target) {
+                        hoveredTarget = { strokeIndex: i, handle: target.type, cursor: target.cursor };
+                        break;
+                    }
+                } else if (hitTest(worldPos, s)) {
+                    hoveredTarget = { strokeIndex: i, handle: 'body', cursor: 'move' };
+                    break;
+                }
+            }
+        }
+
+        const prevHovered = hoveredBorderRef.current;
+        hoveredBorderRef.current = hoveredTarget;
+        if (canvasRef.current) {
+            canvasRef.current.style.cursor = hoveredTarget ? hoveredTarget.cursor : 'default';
+        }
+        if ((prevHovered?.strokeIndex !== hoveredTarget?.strokeIndex) || (prevHovered?.handle !== hoveredTarget?.handle)) {
+            render();
+        }
+    }
+
     if (!isPanningRef.current) lastMousePosRef.current = coords;
   };
 
   const endDrawing = () => {
     if (isPanningRef.current) { isPanningRef.current = false; return; }
+    if (isRotatingRef.current) {
+        isRotatingRef.current = null;
+        pushHistory();
+        render();
+        return;
+    }
+    if (isResizingShapeRef.current) {
+        isResizingShapeRef.current = null;
+        pushHistory();
+        render();
+        return;
+    }
     if (isResizingTextRef.current) { isResizingTextRef.current = false; return; }
     if (tool === 'eraser' && isDrawingRef.current) {
         isDrawingRef.current = false;
@@ -933,14 +1452,46 @@ print(f"solve({val}) =", solve(val))
   };
 
   const hitTest = (point: Point, stroke: Stroke): boolean => {
-    const bounds = getBoundingBox(stroke);
-    if (stroke.tool === 'text') return point.x >= bounds.minX && point.x <= bounds.maxX && point.y >= bounds.minY && point.y <= bounds.maxY;
-    if (shapeTools.includes(stroke.tool) || stroke.tool === 'image') return Math.abs(point.x - stroke.points[0].x) <= (bounds.maxX - bounds.minX)/2 && Math.abs(point.y - stroke.points[0].y) <= (bounds.maxY - bounds.minY)/2;
+    const rot = stroke.rotation || 0;
+    let localPoint = point;
+    const { w, h } = getStrokeBounds(stroke);
+    const center = (shapeTools.includes(stroke.tool) || stroke.tool === 'image')
+      ? stroke.points[0]
+      : (stroke.tool === 'text'
+        ? { x: (stroke.points[0]?.x || 0) + w / 2, y: (stroke.points[0]?.y || 0) + h / 2 }
+        : { x: (getBoundingBox(stroke).minX + getBoundingBox(stroke).maxX) / 2, y: (getBoundingBox(stroke).minY + getBoundingBox(stroke).maxY) / 2 });
+
+    if (rot !== 0 && center) {
+      const dx = point.x - center.x;
+      const dy = point.y - center.y;
+      const cos = Math.cos(-rot);
+      const sin = Math.sin(-rot);
+      localPoint = {
+        x: center.x + (dx * cos - dy * sin),
+        y: center.y + (dx * sin + dy * cos)
+      };
+    }
+
+    if (shapeTools.includes(stroke.tool) || stroke.tool === 'image') {
+      if (!stroke.points[0]) return false;
+      const scale = scaleRef.current || 1;
+      const hw = w / 2 + 5 / scale;
+      const hh = h / 2 + 5 / scale;
+      return Math.abs(localPoint.x - stroke.points[0].x) <= hw && Math.abs(localPoint.y - stroke.points[0].y) <= hh;
+    }
+    if (stroke.tool === 'text') {
+      const p = stroke.points[0];
+      if (!p) return false;
+      return localPoint.x >= p.x && localPoint.x <= p.x + w && localPoint.y >= p.y && localPoint.y <= p.y + h;
+    }
     if (stroke.tool === 'pen' || stroke.tool === 'dotted-line') {
-        const threshold = Math.max(10, stroke.width / 2 + 5); 
-        if (point.x < bounds.minX - threshold || point.x > bounds.maxX + threshold || point.y < bounds.minY - threshold || point.y > bounds.maxY + threshold) return false;
-        if (stroke.tool === 'dotted-line' && stroke.points.length >= 2) return distanceToSegment(point, stroke.points[0], stroke.points[stroke.points.length - 1]) <= threshold;
-        for (let i = 0; i < stroke.points.length - 1; i++) if (distanceToSegment(point, stroke.points[i], stroke.points[i+1]) <= threshold) return true;
+      const bounds = getBoundingBox(stroke);
+      const threshold = Math.max(10, stroke.width / 2 + 5); 
+      if (localPoint.x < bounds.minX - threshold || localPoint.x > bounds.maxX + threshold || localPoint.y < bounds.minY - threshold || localPoint.y > bounds.maxY + threshold) return false;
+      if (stroke.tool === 'dotted-line' && stroke.points.length >= 2) return distanceToSegment(localPoint, stroke.points[0], stroke.points[stroke.points.length - 1]) <= threshold;
+      for (let i = 0; i < stroke.points.length - 1; i++) {
+        if (distanceToSegment(localPoint, stroke.points[i], stroke.points[i+1]) <= threshold) return true;
+      }
     }
     return false; 
   };

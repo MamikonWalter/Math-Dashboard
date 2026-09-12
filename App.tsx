@@ -17,7 +17,7 @@ import { jsPDF } from "jspdf";
 
 const App: React.FC = () => {
   const [currentTool, setCurrentTool] = useState<ToolType>('pen');
-  const [color, setColor] = useState(DEFAULT_COLOR);
+  const [color, setColor] = useState('#ffffff');
   const [strokeWidth, setStrokeWidth] = useState(DEFAULT_STROKE_WIDTH);
   const [eraserWidth, setEraserWidth] = useState(DEFAULT_ERASER_WIDTH);
   const [shapeSize, setShapeSize] = useState(DEFAULT_SHAPE_SIZE);
@@ -27,7 +27,7 @@ const App: React.FC = () => {
   
   // UI Visibility
   const [isUIVisible, setIsUIVisible] = useState(true);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(true);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(true);
   const [is3DPanelOpen, setIs3DPanelOpen] = useState(false);
 

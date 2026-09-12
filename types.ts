@@ -41,10 +41,12 @@ export interface Stroke {
   points: Point[];
   color: string;
   width: number; // For shapes and images, this represents size/width. For text, font size.
+  height?: number; // Optional height for non-square shapes or images
   tool: ToolType;
   imageUrl?: string;
   text?: string;
   textWidth?: number; // Optional horizontal width for text boxes
+  rotation?: number; // Rotation angle in radians
 }
 
 export interface DrawingState {
