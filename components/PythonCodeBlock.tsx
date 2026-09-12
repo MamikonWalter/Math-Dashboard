@@ -151,7 +151,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
     }
   };
 
-  // Keyboard ergonomics: Tab indentation & Enter auto-indent
+  // Keyboard ergonomics: Tab indentation, Enter auto-indent, Auto-closing brackets & quotes
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Run on Ctrl+Enter / Cmd+Enter
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -160,14 +160,16 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       return;
     }
 
+    const target = e.currentTarget;
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+    const code = block.code;
+
+    // Tab indentation
     if (e.key === 'Tab') {
       e.preventDefault();
-      const target = e.currentTarget;
-      const start = target.selectionStart;
-      const end = target.selectionEnd;
       const spaces = '    ';
-
-      const newCode = block.code.substring(0, start) + spaces + block.code.substring(end);
+      const newCode = code.substring(0, start) + spaces + code.substring(end);
       onUpdate({ code: newCode });
 
       setTimeout(() => {
@@ -178,21 +180,133 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       return;
     }
 
+    // Auto-closing brackets and quotes pairs
+    const PAIRS: Record<string, string> = {
+      '(': ')',
+      '[': ']',
+      '{': '}',
+      '"': '"',
+      "'": "'"
+    };
+
+    // If an opening bracket or quote is typed
+    if (PAIRS[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const closing = PAIRS[e.key];
+
+      // If text is selected, wrap the selection in the pair
+      if (start !== end) {
+        e.preventDefault();
+        const selectedText = code.substring(start, end);
+        const newCode = code.substring(0, start) + e.key + selectedText + closing + code.substring(end);
+        onUpdate({ code: newCode });
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = start + 1;
+            textareaRef.current.selectionEnd = end + 1;
+          }
+        }, 0);
+        return;
+      }
+
+      // If quote typed and the next character is already that same quote, just step over it
+      if ((e.key === '"' || e.key === "'") && code[start] === e.key) {
+        e.preventDefault();
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 1;
+          }
+        }, 0);
+        return;
+      }
+
+      // Otherwise insert pair and place cursor in between
+      e.preventDefault();
+      const newCode = code.substring(0, start) + e.key + closing + code.substring(start);
+      onUpdate({ code: newCode });
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 1;
+        }
+      }, 0);
+      return;
+    }
+
+    // Overtype / step over closing bracket when typed directly before existing closing char
+    const CLOSING_CHARS = new Set([')', ']', '}', '"', "'"]);
+    if (CLOSING_CHARS.has(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (start === end && code[start] === e.key) {
+        e.preventDefault();
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 1;
+          }
+        }, 0);
+        return;
+      }
+    }
+
+    // Auto-delete pair on Backspace between empty pair
+    if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (start === end && start > 0) {
+        const charBefore = code[start - 1];
+        const charAfter = code[start];
+        if (
+          (charBefore === '(' && charAfter === ')') ||
+          (charBefore === '[' && charAfter === ']') ||
+          (charBefore === '{' && charAfter === '}') ||
+          (charBefore === '"' && charAfter === '"') ||
+          (charBefore === "'" && charAfter === "'")
+        ) {
+          e.preventDefault();
+          const newCode = code.substring(0, start - 1) + code.substring(start + 1);
+          onUpdate({ code: newCode });
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start - 1;
+            }
+          }, 0);
+          return;
+        }
+      }
+    }
+
+    // Enter auto-indent
     if (e.key === 'Enter') {
       e.preventDefault();
-      const target = e.currentTarget;
-      const cursor = target.selectionStart;
-      const beforeCursor = block.code.substring(0, cursor);
-      const afterCursor = block.code.substring(cursor);
+      const beforeCursor = code.substring(0, start);
+      const afterCursor = code.substring(end);
 
-      // Find current line
+      // Find current line indent
       const lastLine = beforeCursor.split('\n').pop() || '';
       const match = lastLine.match(/^(\s*)/);
-      let indent = match ? match[1] : '';
+      const baseIndent = match ? match[1] : '';
+      let indent = baseIndent;
 
       // If line ends with colon, increase indentation by 4 spaces
       if (lastLine.trim().endsWith(':')) {
         indent += '    ';
+      }
+
+      // Check if cursor is between matching pairs: { and }, ( and ), [ and ]
+      const charBefore = beforeCursor.slice(-1);
+      const charAfter = afterCursor.slice(0, 1);
+      if (
+        (charBefore === '{' && charAfter === '}') ||
+        (charBefore === '[' && charAfter === ']') ||
+        (charBefore === '(' && charAfter === ')')
+      ) {
+        const innerIndent = baseIndent + '    ';
+        const insertion = '\n' + innerIndent;
+        const endInsertion = '\n' + baseIndent;
+        const newCode = beforeCursor + insertion + endInsertion + afterCursor;
+        onUpdate({ code: newCode });
+
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + insertion.length;
+          }
+        }, 0);
+        return;
       }
 
       const insertion = '\n' + indent;
@@ -201,9 +315,10 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
 
       setTimeout(() => {
         if (textareaRef.current) {
-          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = cursor + insertion.length;
+          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + insertion.length;
         }
       }, 0);
+      return;
     }
   };
 
