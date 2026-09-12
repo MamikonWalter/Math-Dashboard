@@ -1,7 +1,8 @@
 
 import React, { useRef, useEffect, useCallback, useImperativeHandle, forwardRef, useState } from 'react';
-import { ToolType, Point, Stroke, WhiteboardHandle, WhiteboardData } from '../types';
+import { ToolType, Point, Stroke, WhiteboardHandle, WhiteboardData, CodeBlockItem } from '../types';
 import { PIXELS_PER_PERCENT } from '../constants';
+import PythonCodeBlock from './PythonCodeBlock';
 
 interface WhiteboardProps {
   tool: ToolType;
@@ -70,6 +71,32 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   // Text Tool State
   const [activeTextInput, setActiveTextInput] = useState<TextInputState | null>(null);
 
+  // Code Blocks State
+  const [codeBlocks, setCodeBlocks] = useState<CodeBlockItem[]>([]);
+  const codeBlocksRef = useRef<CodeBlockItem[]>([]);
+  codeBlocksRef.current = codeBlocks;
+  const [activeCodeBlockId, setActiveCodeBlockId] = useState<string | null>(null);
+  const activeCodeBlockIdRef = useRef<string | null>(null);
+  activeCodeBlockIdRef.current = activeCodeBlockId;
+  const [, setCamTick] = useState(0);
+
+  // Code block drag / resize tracking
+  const blockDragRef = useRef<{
+    blockId: string;
+    startMouseX: number;
+    startMouseY: number;
+    startBlockX: number;
+    startBlockY: number;
+  } | null>(null);
+
+  const blockResizeRef = useRef<{
+    blockId: string;
+    startMouseX: number;
+    startMouseY: number;
+    startWidth: number;
+    startHeight: number;
+  } | null>(null);
+
   // Clipboard Ref
   const clipboardRef = useRef<Stroke[]>([]);
 
@@ -77,7 +104,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const imageCache = useRef<Record<string, HTMLImageElement>>({});
 
   // History Refs
-  const historyRef = useRef<Stroke[][]>([[]]);
+  interface HistorySnapshot {
+    strokes: Stroke[];
+    codeBlocks: CodeBlockItem[];
+  }
+  const historyRef = useRef<HistorySnapshot[]>([{ strokes: [], codeBlocks: [] }]);
   const historyStepRef = useRef<number>(0);
   const prevUndoTrigger = useRef(0);
   const prevRedoTrigger = useRef(0);
@@ -343,14 +374,123 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       }
   };
 
+  const drawCodeBlockOnCtx = (ctx: CanvasRenderingContext2D, block: CodeBlockItem, isDark: boolean) => {
+    const x = block.x;
+    const y = block.y;
+    const w = block.width;
+    const h = block.isMinimized ? 42 : (block.height || 240);
+    const r = 12;
+
+    ctx.save();
+    // Card background
+    ctx.beginPath();
+    if (typeof (ctx as any).roundRect === 'function') {
+      (ctx as any).roundRect(x, y, w, h, r);
+    } else {
+      ctx.rect(x, y, w, h);
+    }
+    ctx.fillStyle = isDark ? '#18181b' : '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = isDark ? '#3f3f46' : '#cbd5e1';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Header background
+    const headerH = 36;
+    ctx.save();
+    ctx.beginPath();
+    if (typeof (ctx as any).roundRect === 'function') {
+      (ctx as any).roundRect(x, y, w, headerH, [r, r, 0, 0]);
+    } else {
+      ctx.rect(x, y, w, headerH);
+    }
+    ctx.fillStyle = isDark ? '#202024' : '#f1f5f9';
+    ctx.fill();
+    ctx.strokeStyle = isDark ? '#323238' : '#e2e8f0';
+    ctx.stroke();
+
+    // Header title
+    ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillStyle = '#387eb8';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Python 3', x + 12, y + headerH / 2);
+
+    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    ctx.fillStyle = isDark ? '#d4d4d8' : '#475569';
+    ctx.fillText(block.title || 'script.py', x + 75, y + headerH / 2);
+    ctx.restore();
+
+    if (!block.isMinimized) {
+      // Line numbers gutter
+      const gutterW = 38;
+      ctx.fillStyle = isDark ? '#1f1f23' : '#f8fafc';
+      ctx.fillRect(x + 1, y + headerH, gutterW, h - headerH - 1);
+      ctx.strokeStyle = isDark ? '#2e2e33' : '#f1f5f9';
+      ctx.beginPath();
+      ctx.moveTo(x + 1 + gutterW, y + headerH);
+      ctx.lineTo(x + 1 + gutterW, y + h - 1);
+      ctx.stroke();
+
+      // Code lines
+      const lines = (block.code || '').split('\n');
+      const lineH = 19;
+      ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      ctx.textBaseline = 'top';
+
+      lines.forEach((line, i) => {
+        const lineY = y + headerH + 8 + i * lineH;
+        if (lineY + lineH > y + h - 20) return;
+
+        // Line number
+        ctx.fillStyle = isDark ? '#52525b' : '#94a3b8';
+        ctx.fillText(String(i + 1), x + 10, lineY);
+
+        // Code line syntax styling
+        if (line.trim().startsWith('#')) {
+          ctx.fillStyle = isDark ? '#71717a' : '#64748b';
+        } else if (/\b(def|class|import|return|if|elif|else|for|while|in)\b/.test(line)) {
+          ctx.fillStyle = isDark ? '#c084fc' : '#7c3aed';
+        } else {
+          ctx.fillStyle = isDark ? '#f4f4f5' : '#0f172a';
+        }
+        ctx.fillText(line, x + gutterW + 10, lineY);
+      });
+
+      // Output section if present
+      if (block.output) {
+        const outLines = block.output.split('\n');
+        const outH = Math.min(70, outLines.length * 16 + 12);
+        const outY = y + h - outH - 8;
+        ctx.fillStyle = isDark ? '#1e1e24' : '#f8fafc';
+        ctx.fillRect(x + gutterW + 6, outY, w - gutterW - 14, outH);
+        ctx.strokeStyle = isDark ? '#323238' : '#e2e8f0';
+        ctx.strokeRect(x + gutterW + 6, outY, w - gutterW - 14, outH);
+
+        ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+        ctx.fillStyle = isDark ? '#a1a1aa' : '#334155';
+        outLines.slice(0, 3).forEach((ol, oi) => {
+          ctx.fillText(ol, x + gutterW + 12, outY + 6 + oi * 16);
+        });
+      }
+    }
+    ctx.restore();
+  };
+
   // --- Imperative Handle ---
   useImperativeHandle(ref, () => ({
     getSnapshot: (): WhiteboardData => {
-      return { strokes: strokesRef.current, camera: cameraRef.current, version: 1 };
+      return { 
+        strokes: strokesRef.current, 
+        codeBlocks: codeBlocksRef.current,
+        camera: cameraRef.current, 
+        version: 1 
+      };
     },
     restoreSnapshot: (data: WhiteboardData) => {
       if (data && Array.isArray(data.strokes)) {
         strokesRef.current = data.strokes;
+        const blocks = data.codeBlocks && Array.isArray(data.codeBlocks) ? data.codeBlocks : [];
+        setCodeBlocks(blocks);
         if (data.camera) cameraRef.current = data.camera;
         data.strokes.forEach(s => {
             if (s.tool === 'image' && s.imageUrl && !imageCache.current[s.imageUrl]) {
@@ -360,7 +500,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                 imageCache.current[s.imageUrl] = img;
             }
         });
-        historyRef.current = [data.strokes];
+        historyRef.current = [{ strokes: data.strokes, codeBlocks: blocks }];
         historyStepRef.current = 0;
         selectedIndicesRef.current.clear();
         onHistoryChange(false, false);
@@ -378,11 +518,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             cameraRef.current.x = centerScreenX - worldCenterX * constrainedScale;
             cameraRef.current.y = centerScreenY - worldCenterY * constrainedScale;
             scaleRef.current = constrainedScale;
+            setCamTick(t => t + 1);
             render();
             if (onZoomChange) onZoomChange(constrainedScale);
         }
     },
     deleteSelection: () => {
+        let changed = false;
+        if (activeCodeBlockIdRef.current) {
+            const nextBlocks = codeBlocksRef.current.filter(b => b.id !== activeCodeBlockIdRef.current);
+            setCodeBlocks(nextBlocks);
+            activeCodeBlockIdRef.current = null;
+            setActiveCodeBlockId(null);
+            changed = true;
+        }
         if (selectedIndicesRef.current.size > 0) {
             const newStrokes = strokesRef.current.filter((_, index) => !selectedIndicesRef.current.has(index));
             strokesRef.current = newStrokes;
@@ -390,6 +539,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             if (onShapeSelect) onShapeSelect(null);
             isDraggingSelectionRef.current = false;
             isDrawingRef.current = false;
+            changed = true;
+        }
+        if (changed) {
             pushHistory();
             render();
         }
@@ -434,7 +586,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     getCanvasImage: () => {
         const canvas = canvasRef.current;
         if (!canvas) return null;
-        if (strokesRef.current.length === 0) return canvas.toDataURL('image/png');
+        if (strokesRef.current.length === 0 && codeBlocksRef.current.length === 0) return canvas.toDataURL('image/png');
 
         // Capture EVERYTHING on the board by calculating a bounding box for all content
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -444,6 +596,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             maxX = Math.max(maxX, bounds.maxX);
             minY = Math.min(minY, bounds.minY);
             maxY = Math.max(maxY, bounds.maxY);
+        });
+        codeBlocksRef.current.forEach(block => {
+            const w = block.width;
+            const h = block.isMinimized ? 42 : (block.height || 240);
+            minX = Math.min(minX, block.x);
+            maxX = Math.max(maxX, block.x + w);
+            minY = Math.min(minY, block.y);
+            maxY = Math.max(maxY, block.y + h);
         });
 
         const padding = 100; // Large padding for AI context
@@ -472,6 +632,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         offCtx.scale(scaleDown, scaleDown);
         offCtx.translate(-minX + padding, -minY + padding);
         strokesRef.current.forEach(stroke => drawStrokeOnCtx(offCtx, stroke));
+        codeBlocksRef.current.forEach(block => drawCodeBlockOnCtx(offCtx, block, isDarkMode));
         offCtx.restore();
 
         return offCanvas.toDataURL('image/png');
@@ -575,6 +736,36 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     }
     const worldPos = screenToWorld(coords.x, coords.y);
 
+    if (tool === 'code') {
+        onDrawStart();
+        const newBlock: CodeBlockItem = {
+            id: 'cb_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+            x: Math.round(worldPos.x),
+            y: Math.round(worldPos.y),
+            width: 480,
+            height: 250,
+            title: 'script.py',
+            code: `# Python 3
+import math
+
+def solve(x):
+    return x**2 - 5*x + 6
+
+val = 5
+print(f"solve({val}) =", solve(val))
+`,
+            output: undefined,
+            isMinimized: false
+        };
+        setCodeBlocks(prev => {
+            const next = [...prev, newBlock];
+            pushHistory(strokesRef.current, next);
+            return next;
+        });
+        setActiveCodeBlockId(newBlock.id);
+        return;
+    }
+
     if (tool === 'text') {
         if (activeTextInput) handleFinishText();
         else {
@@ -670,6 +861,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
        cameraRef.current.x += coords.x - lastMousePosRef.current.x;
        cameraRef.current.y += coords.y - lastMousePosRef.current.y;
        lastMousePosRef.current = coords;
+       setCamTick(t => t + 1);
        render(); return;
     }
     if (isResizingTextRef.current && activeTextInput) {
@@ -812,12 +1004,95 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     return { x: ev.clientX, y: ev.clientY };
   };
 
-  const pushHistory = () => {
+  const pushHistory = (newStrokes: Stroke[] = strokesRef.current, newBlocks: CodeBlockItem[] = codeBlocksRef.current) => {
       const newHistory = historyRef.current.slice(0, historyStepRef.current + 1);
-      newHistory.push([...strokesRef.current]);
-      historyRef.current = newHistory; historyStepRef.current += 1;
+      newHistory.push({
+          strokes: [...newStrokes],
+          codeBlocks: JSON.parse(JSON.stringify(newBlocks))
+      });
+      historyRef.current = newHistory; 
+      historyStepRef.current += 1;
       onHistoryChange(true, false);
   };
+
+  // Listen to window pointer movements when dragging/resizing code block
+  useEffect(() => {
+    let animFrameId: number | null = null;
+    let pendingDrag: { blockId: string; x: number; y: number } | null = null;
+    let pendingResize: { blockId: string; width: number; height: number } | null = null;
+
+    const handlePointerMove = (e: PointerEvent | MouseEvent) => {
+      if (blockDragRef.current) {
+        const { blockId, startMouseX, startMouseY, startBlockX, startBlockY } = blockDragRef.current;
+        const dx = (e.clientX - startMouseX) / scaleRef.current;
+        const dy = (e.clientY - startMouseY) / scaleRef.current;
+        pendingDrag = {
+          blockId,
+          x: Math.round(startBlockX + dx),
+          y: Math.round(startBlockY + dy)
+        };
+        if (animFrameId === null) {
+          animFrameId = requestAnimationFrame(() => {
+            animFrameId = null;
+            if (pendingDrag) {
+              const { blockId: bId, x: newX, y: newY } = pendingDrag;
+              setCodeBlocks(prev => prev.map(b => b.id === bId ? { ...b, x: newX, y: newY } : b));
+              pendingDrag = null;
+            }
+          });
+        }
+      } else if (blockResizeRef.current) {
+        const { blockId, startMouseX, startMouseY, startWidth, startHeight } = blockResizeRef.current;
+        const dw = (e.clientX - startMouseX) / scaleRef.current;
+        const dh = (e.clientY - startMouseY) / scaleRef.current;
+        pendingResize = {
+          blockId,
+          width: Math.max(300, Math.round(startWidth + dw)),
+          height: Math.max(160, Math.round(startHeight + dh))
+        };
+        if (animFrameId === null) {
+          animFrameId = requestAnimationFrame(() => {
+            animFrameId = null;
+            if (pendingResize) {
+              const { blockId: bId, width: newW, height: newH } = pendingResize;
+              setCodeBlocks(prev => prev.map(b => b.id === bId ? { ...b, width: newW, height: newH } : b));
+              pendingResize = null;
+            }
+          });
+        }
+      }
+    };
+
+    const handlePointerUp = () => {
+      if (animFrameId !== null) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+      }
+      if (pendingDrag) {
+        const { blockId: bId, x: newX, y: newY } = pendingDrag;
+        setCodeBlocks(prev => prev.map(b => b.id === bId ? { ...b, x: newX, y: newY } : b));
+        pendingDrag = null;
+      }
+      if (pendingResize) {
+        const { blockId: bId, width: newW, height: newH } = pendingResize;
+        setCodeBlocks(prev => prev.map(b => b.id === bId ? { ...b, width: newW, height: newH } : b));
+        pendingResize = null;
+      }
+      if (blockDragRef.current || blockResizeRef.current) {
+        blockDragRef.current = null;
+        blockResizeRef.current = null;
+        pushHistory();
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      if (animFrameId !== null) cancelAnimationFrame(animFrameId);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, []);
 
   // React to shapeSize changes for selected items
   useEffect(() => {
@@ -866,7 +1141,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         const scaleFactor = Math.pow(1.001, -e.deltaY);
         let newScale = Math.max(0.01, Math.min(oldScale * scaleFactor, 4.0));
         cam.x = mouseX - worldX * newScale; cam.y = mouseY - worldY * newScale;
-        scaleRef.current = newScale; render(); if (onZoomChange) onZoomChange(newScale);
+        scaleRef.current = newScale; 
+        setCamTick(t => t + 1);
+        render(); 
+        if (onZoomChange) onZoomChange(newScale);
       };
       canvas.addEventListener('wheel', handleWheel, { passive: false });
       return () => canvas.removeEventListener('wheel', handleWheel);
@@ -877,21 +1155,32 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     if (triggerUndo > prevUndoTrigger.current) {
         prevUndoTrigger.current = triggerUndo;
         if (historyStepRef.current > 0) {
-            historyStepRef.current -= 1; strokesRef.current = historyRef.current[historyStepRef.current];
-            selectedIndicesRef.current.clear(); onHistoryChange(historyStepRef.current > 0, true); render();
+            historyStepRef.current -= 1; 
+            const step = historyRef.current[historyStepRef.current];
+            strokesRef.current = step.strokes;
+            setCodeBlocks(step.codeBlocks || []);
+            selectedIndicesRef.current.clear(); 
+            onHistoryChange(historyStepRef.current > 0, true); 
+            render();
         }
     }
     if (triggerRedo > prevRedoTrigger.current) {
         prevRedoTrigger.current = triggerRedo;
         if (historyStepRef.current < historyRef.current.length - 1) {
-            historyStepRef.current += 1; strokesRef.current = historyRef.current[historyStepRef.current];
-            selectedIndicesRef.current.clear(); onHistoryChange(true, historyStepRef.current < historyRef.current.length - 1); render();
+            historyStepRef.current += 1; 
+            const step = historyRef.current[historyStepRef.current];
+            strokesRef.current = step.strokes;
+            setCodeBlocks(step.codeBlocks || []);
+            selectedIndicesRef.current.clear(); 
+            onHistoryChange(true, historyStepRef.current < historyRef.current.length - 1); 
+            render();
         }
     }
   }, [triggerUndo, triggerRedo, render, onHistoryChange]);
 
   const getCursorStyle = () => {
     if (isResizingTextRef.current) return 'cursor-ew-resize';
+    if (tool === 'code') return 'cursor-code';
     if (shapeTools.includes(tool) || tool === 'dotted-line' || tool === 'text') return 'cursor-crosshair';
     if (tool === 'pen') return 'cursor-pen';
     if (tool === 'eraser') return 'cursor-eraser';
@@ -901,8 +1190,78 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const inputScreenPos = activeTextInput ? worldToScreen(activeTextInput.x, activeTextInput.y) : { x: 0, y: 0 };
 
   return (
-    <div ref={containerRef} className={`absolute inset-0 z-0 ${isDarkMode ? 'bg-[#18181b]' : 'bg-[#f0f2f5]'} transition-colors duration-300 overflow-hidden ${getCursorStyle()}`} onContextMenu={(e) => e.preventDefault()}>
+    <div 
+      ref={containerRef} 
+      className={`absolute inset-0 z-0 ${isDarkMode ? 'bg-[#18181b]' : 'bg-[#f0f2f5]'} transition-colors duration-300 overflow-hidden ${getCursorStyle()}`} 
+      onContextMenu={(e) => e.preventDefault()}
+      onClick={() => {
+        // Clicking on empty whiteboard canvas area deselects active code block
+        if (activeCodeBlockIdRef.current) {
+          setActiveCodeBlockId(null);
+        }
+      }}
+    >
       <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={move} onMouseUp={endDrawing} onMouseLeave={endDrawing} onTouchStart={startDrawing} onTouchMove={move} onTouchEnd={endDrawing} className="block touch-none" />
+      
+      {/* Code Blocks Overlays */}
+      {codeBlocks.map((block) => {
+        const screenPos = worldToScreen(block.x, block.y);
+        const effectiveScale = Math.max(0.7, Math.min(scaleRef.current, 1.4));
+        return (
+          <PythonCodeBlock
+            key={block.id}
+            block={block}
+            scale={effectiveScale}
+            screenPos={screenPos}
+            isDarkMode={isDarkMode}
+            isActive={activeCodeBlockId === block.id}
+            onFocus={() => setActiveCodeBlockId(block.id)}
+            onDragStart={(e) => {
+              if ('button' in e && e.button !== 0) return;
+              e.stopPropagation();
+              const coords = 'touches' in e ? e.touches[0] : e;
+              blockDragRef.current = {
+                blockId: block.id,
+                startMouseX: coords.clientX,
+                startMouseY: coords.clientY,
+                startBlockX: block.x,
+                startBlockY: block.y
+              };
+              setActiveCodeBlockId(block.id);
+            }}
+            onResizeStart={(e) => {
+              if ('button' in e && e.button !== 0) return;
+              e.stopPropagation();
+              const coords = 'touches' in e ? e.touches[0] : e;
+              blockResizeRef.current = {
+                blockId: block.id,
+                startMouseX: coords.clientX,
+                startMouseY: coords.clientY,
+                startWidth: block.width,
+                startHeight: block.height || 240
+              };
+              setActiveCodeBlockId(block.id);
+            }}
+            onUpdate={(updated) => {
+              setCodeBlocks(prev => {
+                const next = prev.map(b => b.id === block.id ? { ...b, ...updated } : b);
+                return next;
+              });
+            }}
+            onDelete={() => {
+              setCodeBlocks(prev => {
+                const next = prev.filter(b => b.id !== block.id);
+                pushHistory(strokesRef.current, next);
+                return next;
+              });
+              if (activeCodeBlockIdRef.current === block.id) {
+                setActiveCodeBlockId(null);
+              }
+            }}
+          />
+        );
+      })}
+
       {activeTextInput && (
           <div className="absolute z-40 pointer-events-none" style={{ left: inputScreenPos.x, top: inputScreenPos.y }}>
               <textarea ref={textInputRef} className="bg-transparent border border-blue-400 outline-none p-0 m-0 overflow-hidden resize-none leading-tight pointer-events-auto" style={{ color: activeTextInput.color, fontSize: `${activeTextInput.fontSize * scaleRef.current}px`, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', minWidth: '50px', minHeight: '24px', width: activeTextInput.width > 0 ? `${activeTextInput.width * scaleRef.current}px` : 'auto', height: 'auto' }} value={activeTextInput.value} onChange={(e) => {

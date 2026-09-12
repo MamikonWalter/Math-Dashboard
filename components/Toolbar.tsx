@@ -14,6 +14,7 @@ import {
   Box,
   Minus,
   Type,
+  Code2,
   Sparkles
 } from 'lucide-react';
 import { ToolType } from '../types';
@@ -48,6 +49,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
     { id: 'cursor', icon: MousePointer2, label: 'Select (V)' },
     { id: 'pen', icon: Pen, label: 'Pen (P)' },
     { id: 'text', icon: Type, label: 'Text (T)' },
+    { id: 'code', icon: Code2, label: 'Code block (Python)' },
     { id: 'dotted-line', icon: Minus, label: 'Dotted Line (I)' },
     { id: 'eraser', icon: Eraser, label: 'Eraser (E)' },
   ];

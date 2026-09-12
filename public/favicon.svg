@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+    <linearGradient id="penGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+    <linearGradient id="gridGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.12" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.04" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="64" height="64" rx="16" fill="url(#bgGrad)" />
+
+  <!-- Subtle Whiteboard Frame / Grid Pattern -->
+  <rect x="8" y="8" width="48" height="48" rx="10" fill="url(#gridGrad)" stroke="#ffffff" stroke-opacity="0.25" stroke-width="1.5" />
+
+  <!-- Math & Wave Graphic (Whiteboard curve f(x)) -->
+  <path d="M 14 36 Q 22 20 28 32 T 42 30" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Math Symbol (Sigma / Square Root) -->
+  <path d="M 16 23 L 24 23 L 19 29 L 24 35 L 16 35" fill="none" stroke="#93c5fd" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+
+  <!-- Stylus / Mathters Pen -->
+  <g filter="url(#shadow)">
+    <!-- Pen body -->
+    <path d="M 46 14 L 52 20 L 36 36 L 30 36 L 30 30 Z" fill="url(#penGrad)" stroke="#d97706" stroke-width="1" />
+    <!-- Pen tip -->
+    <polygon points="30,36 30,31 35,36" fill="#1e293b" />
+    <!-- Glowing active tip point -->
+    <circle cx="29" cy="37" r="2" fill="#38bdf8" />
+  </g>
+
+  <!-- Small math spark -->
+  <circle cx="48" cy="44" r="1.5" fill="#fef08a" />
+  <circle cx="42" cy="48" r="1" fill="#bfdbfe" />
+</svg>

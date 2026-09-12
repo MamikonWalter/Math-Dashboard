@@ -5,6 +5,7 @@ export type ToolType =
   | 'dotted-line'
   | 'eraser'
   | 'text'
+  | 'code'
   | 'square'
   | 'circle'
   | 'triangle'
@@ -22,6 +23,18 @@ export type ToolType =
 export interface Point {
   x: number;
   y: number;
+}
+
+export interface CodeBlockItem {
+  id: string;
+  x: number; // World coordinates
+  y: number;
+  width: number;
+  height: number;
+  title: string;
+  code: string;
+  output?: string;
+  isMinimized?: boolean;
 }
 
 export interface Stroke {
@@ -48,6 +61,7 @@ export interface HistoryItem {
 
 export interface WhiteboardData {
   strokes: Stroke[];
+  codeBlocks?: CodeBlockItem[];
   camera: { x: number; y: number };
   version: number;
 }

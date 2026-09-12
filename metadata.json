@@ -1,6 +1,6 @@
 {
   "name": "Mathters Whiteboard",
-  "description": "A collaborative-style drawing board featuring pen tools, color selection, and erasing capabilities with a clean, modern UI.",
+  "description": "Интерактивная доска для математических расчетов, чертежей и Python-кода с поддержкой светлой и тёмной темы.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

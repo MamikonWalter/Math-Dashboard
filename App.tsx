@@ -26,7 +26,7 @@ const App: React.FC = () => {
   const [showGrid, setShowGrid] = useState(false);
   
   // UI Visibility
-  const [isUIVisible, setIsUIVisible] = useState(false);
+  const [isUIVisible, setIsUIVisible] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(true);
   const [is3DPanelOpen, setIs3DPanelOpen] = useState(false);
@@ -349,6 +349,7 @@ const App: React.FC = () => {
           switch (code) {
               case 'KeyV': handleSetTool('cursor'); break;
               case 'KeyT': handleSetTool('text'); break;
+              case 'KeyC': handleSetTool('code'); break;
               case 'KeyP': handleSetTool('pen'); break;
               case 'KeyM': handleAISolve(); break;
               case 'KeyI': handleSetTool('dotted-line'); break;
