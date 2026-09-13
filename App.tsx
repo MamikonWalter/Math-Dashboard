@@ -12,6 +12,8 @@ import ZoomControls from './components/ZoomControls';
 import AIAssistant from './components/AIAssistant';
 import { ToolType, WhiteboardHandle } from './types';
 import { DEFAULT_COLOR, DEFAULT_STROKE_WIDTH, DEFAULT_ERASER_WIDTH, DEFAULT_SHAPE_SIZE } from './constants';
+import RoomWelcomeModal from './components/RoomWelcomeModal';
+import { collab, RemoteCursor } from './utils/collaboration';
 import { GoogleGenAI } from "@google/genai";
 import { jsPDF } from "jspdf";
 
@@ -59,6 +61,124 @@ const App: React.FC = () => {
   const [redoTrigger, setRedoTrigger] = useState(0);
 
   const whiteboardRef = useRef<WhiteboardHandle>(null);
+
+  // Real-time Room & Collaboration State
+  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
+  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
+  const [userCount, setUserCount] = useState(1);
+  const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
+
+  const handleCreateRoom = useCallback(async (): Promise<string> => {
+    try {
+      const res = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      const newRoomId = data.id;
+      setCurrentRoomId(newRoomId);
+      whiteboardRef.current?.clearBoard();
+      collab.connect(newRoomId);
+
+      const newUrl = `${window.location.pathname}?room=${encodeURIComponent(newRoomId)}`;
+      window.history.replaceState({ path: newUrl }, '', newUrl);
+
+      return newRoomId;
+    } catch (e) {
+      console.error('Failed to create room', e);
+      throw e;
+    }
+  }, []);
+
+  const handleJoinRoom = useCallback(async (roomId: string): Promise<{ success: boolean; error?: string }> => {
+    const clean = roomId.trim().toUpperCase();
+    try {
+      const res = await fetch(`/api/rooms/${encodeURIComponent(clean)}`);
+      const data = await res.json();
+      if (!data.exists) {
+        return {
+          success: false,
+          error: `Доска с кодом "${clean}" не найдена. Проверьте правильность кода или создайте новую.`
+        };
+      }
+      setCurrentRoomId(clean);
+      collab.connect(clean);
+      const newUrl = `${window.location.pathname}?room=${encodeURIComponent(clean)}`;
+      window.history.replaceState({ path: newUrl }, '', newUrl);
+      setIsWelcomeModalOpen(false);
+      return { success: true };
+    } catch (err) {
+      console.error('Failed to join room', err);
+      return { success: false, error: 'Ошибка подключения к серверу' };
+    }
+  }, []);
+
+  // Check URL on initial load and handle room auto-join or modal display
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const roomFromUrl = params.get('room') || params.get('board');
+    if (roomFromUrl) {
+      const clean = roomFromUrl.trim().toUpperCase();
+      fetch(`/api/rooms/${encodeURIComponent(clean)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.exists) {
+            setCurrentRoomId(clean);
+            collab.connect(clean);
+          } else {
+            setIsWelcomeModalOpen(true);
+          }
+        })
+        .catch(() => {
+          setIsWelcomeModalOpen(true);
+        });
+    } else {
+      setIsWelcomeModalOpen(true);
+    }
+  }, []);
+
+  // Listen to collaboration events
+  useEffect(() => {
+    const unsubscribe = collab.subscribe((event) => {
+      switch (event.type) {
+        case 'init': {
+          whiteboardRef.current?.loadRoomState(event.data.strokes, event.data.codeBlocks);
+          setUserCount(event.data.usersCount);
+          break;
+        }
+        case 'stroke_added': {
+          whiteboardRef.current?.applyRemoteStroke(event.data);
+          break;
+        }
+        case 'strokes_updated': {
+          whiteboardRef.current?.applyRemoteStrokes(event.data);
+          break;
+        }
+        case 'code_block_created': {
+          whiteboardRef.current?.applyRemoteCodeBlockCreate(event.data);
+          break;
+        }
+        case 'code_block_updated': {
+          whiteboardRef.current?.applyRemoteCodeBlockUpdate(event.data);
+          break;
+        }
+        case 'code_block_deleted': {
+          whiteboardRef.current?.applyRemoteCodeBlockDelete(event.data);
+          break;
+        }
+        case 'users_count': {
+          setUserCount(event.data);
+          break;
+        }
+        case 'cursors_updated': {
+          setRemoteCursors(event.data);
+          break;
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleUndo = useCallback(() => setUndoTrigger(prev => prev + 1), []);
   const handleRedo = useCallback(() => setRedoTrigger(prev => prev + 1), []);
@@ -450,6 +570,9 @@ const App: React.FC = () => {
         isDarkMode={isDarkMode}
         onToggleDarkMode={handleToggleDarkMode}
         isVisible={isUIVisible}
+        roomId={currentRoomId}
+        userCount={userCount}
+        onOpenRoomModal={() => setIsWelcomeModalOpen(true)}
       />
       <Toolbar 
         currentTool={currentTool} 
@@ -531,7 +654,23 @@ const App: React.FC = () => {
         triggerRedo={redoTrigger} 
         onDrawStart={handleDrawStart} 
         onZoomChange={setZoom} 
-        onShapeSelect={handleShapeSelect} 
+        onShapeSelect={handleShapeSelect}
+        onStrokesChanged={(strokes) => collab.sendStrokesUpdate(strokes)}
+        onCodeBlockCreated={(block) => collab.sendCodeBlockCreate(block)}
+        onCodeBlockUpdated={(block) => collab.sendCodeBlockUpdate(block)}
+        onCodeBlockDeleted={(blockId) => collab.sendCodeBlockDelete(blockId)}
+        onCursorMove={(x, y) => collab.sendCursor(x, y)}
+        remoteCursors={remoteCursors}
+      />
+
+      <RoomWelcomeModal
+        isOpen={isWelcomeModalOpen}
+        onClose={() => setIsWelcomeModalOpen(false)}
+        canClose={!!currentRoomId}
+        currentRoomId={currentRoomId}
+        onCreateRoom={handleCreateRoom}
+        onJoinRoom={handleJoinRoom}
+        isDarkMode={isDarkMode}
       />
     </div>
   );

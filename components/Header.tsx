@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Share2, Save, FolderOpen, Image as ImageIcon, Moon, Sun } from 'lucide-react';
+import { Share2, Save, FolderOpen, Image as ImageIcon, Moon, Sun, Users, Copy, Check } from 'lucide-react';
 
 interface HeaderProps {
   onClear: () => void;
@@ -10,6 +10,9 @@ interface HeaderProps {
   isDarkMode?: boolean;
   onToggleDarkMode?: () => void;
   isVisible?: boolean;
+  roomId?: string | null;
+  userCount?: number;
+  onOpenRoomModal?: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ 
@@ -19,12 +22,27 @@ const Header: React.FC<HeaderProps> = ({
   onExportPNG,
   isDarkMode = false,
   onToggleDarkMode,
-  isVisible = true
+  isVisible = true,
+  roomId,
+  userCount = 1,
+  onOpenRoomModal
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [boardName, setBoardName] = useState("Новая доска");
   const [isEditingName, setIsEditingName] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleShareClick = () => {
+    if (roomId) {
+      const url = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`;
+      navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } else if (onOpenRoomModal) {
+      onOpenRoomModal();
+    }
+  };
 
   const handleOpenClick = () => {
     fileInputRef.current?.click();
@@ -107,6 +125,44 @@ const Header: React.FC<HeaderProps> = ({
                 )}
             </div>
         </div>
+        {roomId && (
+          <div className="hidden sm:flex items-center gap-2">
+            <button
+              onClick={handleShareClick}
+              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-medium flex items-center gap-1.5 transition-colors border ${
+                isDarkMode ? 'bg-[#18181b] border-[#3f3f46] hover:border-blue-500 text-blue-400' : 'bg-gray-100 border-gray-300 hover:border-blue-500 text-blue-600'
+              }`}
+              title="Код доступа (нажмите, чтобы скопировать ссылку)"
+            >
+              <span className="font-sans text-[11px] text-gray-400">Код:</span>
+              <span className="font-bold">{roomId}</span>
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 opacity-60" />}
+            </button>
+
+            <div 
+              className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 border ${
+                isDarkMode ? 'bg-[#18181b] border-[#3f3f46] text-gray-300' : 'bg-gray-100 border-gray-300 text-gray-700'
+              }`}
+              title={`Сейчас на доске: ${userCount} ${userCount === 1 ? 'участник' : 'участника'}`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <Users className="w-3.5 h-3.5 opacity-70" />
+              <span>{userCount}</span>
+            </div>
+
+            {onOpenRoomModal && (
+              <button
+                onClick={onOpenRoomModal}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border ${
+                  isDarkMode ? 'bg-[#28282e] hover:bg-[#32323a] border-[#3f3f46] text-gray-300' : 'bg-white hover:bg-gray-100 border-gray-300 text-gray-700'
+                }`}
+                title="Сменить доску или войти по другому коду"
+              >
+                Сменить доску
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
@@ -173,11 +229,12 @@ const Header: React.FC<HeaderProps> = ({
         />
 
         <button 
-          onClick={onClear}
-          className="ml-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+          onClick={handleShareClick}
+          className="ml-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+          title="Поделиться доской (скопировать ссылку с кодом доступа)"
         >
-          <Share2 className="w-4 h-4" />
-          Поделиться
+          {copied ? <Check className="w-4 h-4 text-emerald-300" /> : <Share2 className="w-4 h-4" />}
+          {copied ? 'Скопировано!' : 'Поделиться'}
         </button>
       </div>
     </div>

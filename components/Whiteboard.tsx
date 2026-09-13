@@ -18,6 +18,13 @@ interface WhiteboardProps {
   onDrawStart: () => void;
   onZoomChange?: (zoom: number) => void;
   onShapeSelect?: (size: number | null) => void;
+  onStrokeAdded?: (stroke: Stroke) => void;
+  onStrokesChanged?: (strokes: Stroke[]) => void;
+  onCodeBlockCreated?: (block: CodeBlockItem) => void;
+  onCodeBlockUpdated?: (block: CodeBlockItem) => void;
+  onCodeBlockDeleted?: (blockId: string) => void;
+  onCursorMove?: (worldX: number, worldY: number) => void;
+  remoteCursors?: { userId: string; userName: string; color: string; x: number; y: number }[];
 }
 
 interface TextInputState {
@@ -42,7 +49,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   triggerRedo,
   onDrawStart,
   onZoomChange,
-  onShapeSelect
+  onShapeSelect,
+  onStrokeAdded,
+  onStrokesChanged,
+  onCodeBlockCreated,
+  onCodeBlockUpdated,
+  onCodeBlockDeleted,
+  onCursorMove,
+  remoteCursors = []
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -702,6 +716,64 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         render();
       }
     },
+    loadRoomState: (strokes: Stroke[], blocks: CodeBlockItem[]) => {
+      strokesRef.current = Array.isArray(strokes) ? strokes : [];
+      const codeBlocksList = Array.isArray(blocks) ? blocks : [];
+      setCodeBlocks(codeBlocksList);
+      strokesRef.current.forEach(s => {
+        if (s.tool === 'image' && s.imageUrl && !imageCache.current[s.imageUrl]) {
+          const img = new Image();
+          img.src = s.imageUrl;
+          img.onload = () => render();
+          imageCache.current[s.imageUrl] = img;
+        }
+      });
+      historyRef.current = [{ strokes: strokesRef.current, codeBlocks: codeBlocksList }];
+      historyStepRef.current = 0;
+      selectedIndicesRef.current.clear();
+      onHistoryChange(false, false);
+      render();
+    },
+    applyRemoteStroke: (stroke: Stroke) => {
+      strokesRef.current = [...strokesRef.current, stroke];
+      if (stroke.tool === 'image' && stroke.imageUrl && !imageCache.current[stroke.imageUrl]) {
+        const img = new Image();
+        img.src = stroke.imageUrl;
+        img.onload = () => render();
+        imageCache.current[stroke.imageUrl] = img;
+      }
+      render();
+    },
+    applyRemoteStrokes: (strokes: Stroke[]) => {
+      strokesRef.current = Array.isArray(strokes) ? strokes : [];
+      strokesRef.current.forEach(s => {
+        if (s.tool === 'image' && s.imageUrl && !imageCache.current[s.imageUrl]) {
+          const img = new Image();
+          img.src = s.imageUrl;
+          img.onload = () => render();
+          imageCache.current[s.imageUrl] = img;
+        }
+      });
+      render();
+    },
+    applyRemoteCodeBlockCreate: (block: CodeBlockItem) => {
+      setCodeBlocks(prev => [...prev.filter(b => b.id !== block.id), block]);
+    },
+    applyRemoteCodeBlockUpdate: (block: CodeBlockItem) => {
+      setCodeBlocks(prev => prev.map(b => b.id === block.id ? { ...b, ...block } : b));
+    },
+    applyRemoteCodeBlockDelete: (blockId: string) => {
+      setCodeBlocks(prev => prev.filter(b => b.id !== blockId));
+    },
+    clearBoard: () => {
+      strokesRef.current = [];
+      setCodeBlocks([]);
+      selectedIndicesRef.current.clear();
+      historyRef.current = [{ strokes: [], codeBlocks: [] }];
+      historyStepRef.current = 0;
+      onHistoryChange(false, false);
+      render();
+    },
     setZoom: (targetScale: number) => {
         const constrainedScale = Math.max(0.01, Math.min(targetScale, 4));
         const canvas = canvasRef.current;
@@ -1064,6 +1136,7 @@ print(f"solve({val}) =", solve(val))
             return next;
         });
         setActiveCodeBlockId(newBlock.id);
+        if (onCodeBlockCreated) onCodeBlockCreated(newBlock);
         return;
     }
 
@@ -1240,6 +1313,9 @@ print(f"solve({val}) =", solve(val))
 
   const move = (e: React.MouseEvent | React.TouchEvent) => {
     const coords = getCoords(e);
+    const worldPos = screenToWorld(coords.x, coords.y);
+    if (onCursorMove) onCursorMove(worldPos.x, worldPos.y);
+
     if (isPanningRef.current && lastMousePosRef.current) {
        cameraRef.current.x += coords.x - lastMousePosRef.current.x;
        cameraRef.current.y += coords.y - lastMousePosRef.current.y;
@@ -1555,7 +1631,7 @@ print(f"solve({val}) =", solve(val))
     return { x: ev.clientX, y: ev.clientY };
   };
 
-  const pushHistory = (newStrokes: Stroke[] = strokesRef.current, newBlocks: CodeBlockItem[] = codeBlocksRef.current) => {
+  const pushHistory = (newStrokes: Stroke[] = strokesRef.current, newBlocks: CodeBlockItem[] = codeBlocksRef.current, syncRemote: boolean = true) => {
       const newHistory = historyRef.current.slice(0, historyStepRef.current + 1);
       newHistory.push({
           strokes: [...newStrokes],
@@ -1564,6 +1640,9 @@ print(f"solve({val}) =", solve(val))
       historyRef.current = newHistory; 
       historyStepRef.current += 1;
       onHistoryChange(true, false);
+      if (syncRemote && onStrokesChanged) {
+        onStrokesChanged(newStrokes);
+      }
   };
 
   // Listen to window pointer movements when dragging/resizing code block
@@ -1794,10 +1873,12 @@ print(f"solve({val}) =", solve(val))
               setActiveCodeBlockId(block.id);
             }}
             onUpdate={(updated) => {
+              const fullUpdated = { ...block, ...updated };
               setCodeBlocks(prev => {
-                const next = prev.map(b => b.id === block.id ? { ...b, ...updated } : b);
+                const next = prev.map(b => b.id === block.id ? fullUpdated : b);
                 return next;
               });
+              if (onCodeBlockUpdated) onCodeBlockUpdated(fullUpdated);
             }}
             onDelete={() => {
               setCodeBlocks(prev => {
@@ -1805,11 +1886,44 @@ print(f"solve({val}) =", solve(val))
                 pushHistory(strokesRef.current, next);
                 return next;
               });
+              if (onCodeBlockDeleted) onCodeBlockDeleted(block.id);
               if (activeCodeBlockIdRef.current === block.id) {
                 setActiveCodeBlockId(null);
               }
             }}
           />
+        );
+      })}
+
+      {/* Collaborative Remote User Cursors */}
+      {remoteCursors?.map((cursor) => {
+        const screenPos = worldToScreen(cursor.x, cursor.y);
+        return (
+          <div
+            key={cursor.userId}
+            className="absolute pointer-events-none z-40 transition-transform duration-75 ease-out"
+            style={{
+              transform: `translate(${screenPos.x}px, ${screenPos.y}px)`
+            }}
+          >
+            <svg
+              className="w-5 h-5 -translate-x-1 -translate-y-1 drop-shadow-md"
+              viewBox="0 0 24 24"
+              fill={cursor.color}
+            >
+              <path
+                d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.54.35-.85L6.35 2.86a.5.5 0 0 0-.85.35Z"
+                stroke="#ffffff"
+                strokeWidth="1.5"
+              />
+            </svg>
+            <div
+              className="px-2 py-0.5 rounded-full text-[11px] font-medium text-white shadow-md whitespace-nowrap ml-3 -mt-2"
+              style={{ backgroundColor: cursor.color }}
+            >
+              {cursor.userName}
+            </div>
+          </div>
         );
       })}
 

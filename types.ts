@@ -71,6 +71,13 @@ export interface WhiteboardData {
 export interface WhiteboardHandle {
   getSnapshot: () => WhiteboardData;
   restoreSnapshot: (data: WhiteboardData) => void;
+  loadRoomState: (strokes: Stroke[], blocks: CodeBlockItem[]) => void;
+  applyRemoteStroke: (stroke: Stroke) => void;
+  applyRemoteStrokes: (strokes: Stroke[]) => void;
+  applyRemoteCodeBlockCreate: (block: CodeBlockItem) => void;
+  applyRemoteCodeBlockUpdate: (block: CodeBlockItem) => void;
+  applyRemoteCodeBlockDelete: (blockId: string) => void;
+  clearBoard: () => void;
   setZoom: (scale: number) => void;
   deleteSelection: () => void;
   copySelection: () => boolean;
