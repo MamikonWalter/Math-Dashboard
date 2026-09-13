@@ -577,7 +577,14 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
   };
 
   // Syntax highlighting parser
-  const renderHighlightedCode = (code: string) => {
+  const renderHighlightedCode = (
+    code: string, 
+    fontSize: number, 
+    lineHeight: number, 
+    gutterW: number, 
+    lineNumFontSize: number,
+    gutterPR: number
+  ) => {
     const lines = code.split('\n');
     
     // Keyword matchers
@@ -622,15 +629,24 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       }
 
       return (
-        <div key={lineIdx} className="table-row leading-[20px]">
+        <div key={lineIdx} className="table-row" style={{ height: `${lineHeight}px`, lineHeight: `${lineHeight}px` }}>
           <span 
-            className={`table-cell pr-3 text-right select-none font-mono text-[11px] w-9 transition-colors ${
+            className={`table-cell text-right select-none font-mono transition-colors ${
               isDarkMode ? 'text-zinc-600' : 'text-slate-400'
             }`}
+            style={{ 
+              width: `${gutterW}px`, 
+              fontSize: `${lineNumFontSize}px`,
+              paddingRight: `${gutterPR}px`,
+              lineHeight: `${lineHeight}px`
+            }}
           >
             {lineIdx + 1}
           </span>
-          <span className="table-cell whitespace-pre font-mono text-[13px]">
+          <span 
+            className="table-cell whitespace-pre font-mono"
+            style={{ fontSize: `${fontSize}px`, lineHeight: `${lineHeight}px` }}
+          >
             {parts}
             {commentPart && (
               <span className={`italic ${isDarkMode ? 'text-zinc-500' : 'text-slate-400'}`}>
@@ -696,6 +712,33 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
   const lineCount = block.code.split('\n').length;
   const isMinimized = block.isMinimized ?? false;
 
+  // Proportional font & UI scaling based on code block window dimensions
+  const baseWidth = 480;
+  const baseHeight = 250;
+  const currentWidth = block.width;
+  const currentHeight = block.height || baseHeight;
+
+  // Resizing horizontally or vertically smoothly adjusts font size proportionally
+  const widthRatio = currentWidth / baseWidth;
+  const heightRatio = currentHeight / baseHeight;
+  const dimensionRatio = widthRatio * 0.65 + heightRatio * 0.35;
+
+  // Synchronize text size with code block window size and zoom level
+  const dynamicScale = Math.max(0.6, Math.min(3.5, dimensionRatio * scale));
+
+  // Typography & layout metrics synchronized with window dimensions
+  const codeFontSize = Math.round(13 * dynamicScale);
+  const codeLineHeight = Math.round(20 * dynamicScale);
+  const gutterWidth = Math.max(28, Math.round(42 * dynamicScale));
+  const gutterPadRight = Math.max(4, Math.round(8 * dynamicScale));
+  const lineNumberFontSize = Math.max(8, Math.round(11 * dynamicScale));
+  const editorPadding = Math.max(6, Math.round(12 * dynamicScale));
+
+  const headerTitleFontSize = Math.max(10, Math.min(18, Math.round(12 * dynamicScale)));
+  const outputFontSize = Math.max(9, Math.min(18, Math.round(11.5 * dynamicScale)));
+  const outputLineHeight = Math.round(16 * dynamicScale);
+  const footerFontSize = Math.max(8, Math.min(14, Math.round(10 * dynamicScale)));
+
   return (
     <div
       id={`python-code-block-${block.id}`}
@@ -713,6 +756,8 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
         left: 0,
         top: 0,
         width: `${block.width * scale}px`,
+        height: isMinimized ? 'auto' : (block.height ? `${block.height * scale}px` : 'auto'),
+        minWidth: '240px',
         maxWidth: '90vw',
         zIndex: isActive ? 25 : 15,
         willChange: 'transform'
@@ -722,7 +767,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       <div
         onMouseDown={onDragStart}
         onTouchStart={onDragStart}
-        className={`px-3 py-2.5 flex items-center justify-between select-none cursor-move touch-none border-b transition-colors ${
+        className={`px-3 py-2 flex items-center justify-between select-none cursor-move touch-none border-b transition-colors flex-shrink-0 ${
           isDarkMode 
             ? 'bg-[#202024] border-[#323238]' 
             : 'bg-slate-100 border-slate-200'
@@ -852,24 +897,26 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
 
       {/* Editor Body */}
       {!isMinimized && (
-        <div className="flex flex-col flex-1">
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
           <div 
-            className={`relative flex min-h-[140px] max-h-[360px] overflow-hidden ${
+            className={`relative flex-1 min-h-[90px] overflow-hidden ${
               isDarkMode ? 'bg-[#18181b]' : 'bg-white'
             }`}
-            style={{ height: block.height ? `${block.height * scale}px` : 'auto' }}
           >
             {/* Syntax Highlighted View Underneath */}
             <pre
               ref={preRef}
               aria-hidden="true"
-              className="absolute inset-0 p-3 m-0 overflow-auto pointer-events-none font-mono text-[13px] leading-[20px] whitespace-pre"
+              className="absolute inset-0 m-0 overflow-auto pointer-events-none font-mono whitespace-pre"
               style={{
                 tabSize: 4,
+                padding: `${editorPadding}px`,
+                fontSize: `${codeFontSize}px`,
+                lineHeight: `${codeLineHeight}px`,
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
               }}
             >
-              {renderHighlightedCode(block.code)}
+              {renderHighlightedCode(block.code, codeFontSize, codeLineHeight, gutterWidth, lineNumberFontSize, gutterPadRight)}
             </pre>
 
             {/* Editable Textarea Layer on Top */}
@@ -883,9 +930,13 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
               autoCapitalize="off"
               autoComplete="off"
               autoCorrect="off"
-              className="w-full h-full p-3 m-0 pl-12 bg-transparent text-transparent caret-blue-500 outline-none resize-none font-mono text-[13px] leading-[20px] whitespace-pre overflow-auto z-10 select-text"
+              className="absolute inset-0 w-full h-full m-0 bg-transparent text-transparent caret-blue-500 outline-none resize-none font-mono whitespace-pre overflow-auto z-10 select-text"
               style={{
                 tabSize: 4,
+                padding: `${editorPadding}px`,
+                paddingLeft: `${gutterWidth + editorPadding}px`,
+                fontSize: `${codeFontSize}px`,
+                lineHeight: `${codeLineHeight}px`,
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
               }}
               placeholder="# Напишите Python код здесь..."
@@ -895,25 +946,36 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
           {/* Console / Output Area */}
           {block.output && (
             <div 
-              className={`border-t p-2.5 font-mono text-xs max-h-36 overflow-y-auto transition-colors ${
+              className={`border-t p-2.5 font-mono overflow-y-auto transition-colors flex-shrink-0 ${
                 isDarkMode 
                   ? 'bg-[#1e1e24] border-[#323238] text-zinc-200' 
                   : 'bg-slate-50 border-slate-200 text-slate-800'
               }`}
+              style={{ maxHeight: `${Math.round(140 * dynamicScale)}px` }}
             >
               <div className="flex items-center justify-between pb-1 mb-1 border-b border-current/10">
-                <div className="flex items-center gap-1.5 font-sans font-semibold text-[11px] opacity-75">
-                  <Terminal className="w-3 h-3 text-blue-500" />
+                <div 
+                  className="flex items-center gap-1.5 font-sans font-semibold opacity-75"
+                  style={{ fontSize: `${Math.max(10, Math.round(11 * dynamicScale))}px` }}
+                >
+                  <Terminal className="w-3.5 h-3.5 text-blue-500" />
                   <span>Вывод консоли:</span>
                 </div>
                 <button
                   onClick={() => onUpdate({ output: undefined })}
-                  className="text-[10px] font-sans opacity-60 hover:opacity-100 underline"
+                  className="font-sans opacity-60 hover:opacity-100 underline"
+                  style={{ fontSize: `${Math.max(9, Math.round(10 * dynamicScale))}px` }}
                 >
                   Очистить
                 </button>
               </div>
-              <pre className="whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed">
+              <pre 
+                className="whitespace-pre-wrap font-mono leading-relaxed"
+                style={{
+                  fontSize: `${outputFontSize}px`,
+                  lineHeight: `${outputLineHeight}px`
+                }}
+              >
                 {block.output}
               </pre>
             </div>
@@ -921,11 +983,12 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
 
           {/* Footer Bar with Resize Grip */}
           <div 
-            className={`px-3 py-1 text-[10px] flex items-center justify-between border-t select-none transition-colors ${
+            className={`px-3 py-1 flex items-center justify-between border-t select-none transition-colors flex-shrink-0 ${
               isDarkMode 
                 ? 'bg-[#1f1f23] border-[#2e2e33] text-zinc-500' 
                 : 'bg-slate-100 border-slate-200 text-slate-400'
             }`}
+            style={{ fontSize: `${footerFontSize}px` }}
           >
             <div className="flex items-center gap-2">
               <span>{lineCount} {lineCount === 1 ? 'строка' : (lineCount < 5 ? 'строки' : 'строк')}</span>

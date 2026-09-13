@@ -590,6 +590,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     const h = block.isMinimized ? 42 : (block.height || 240);
     const r = 12;
 
+    const baseWidth = 480;
+    const baseHeight = 250;
+    const widthRatio = w / baseWidth;
+    const heightRatio = h / baseHeight;
+    const dynamicScale = Math.max(0.6, Math.min(3.5, widthRatio * 0.65 + heightRatio * 0.35));
+
+    const codeFontSize = Math.round(12 * dynamicScale);
+    const lineH = Math.round(19 * dynamicScale);
+    const gutterW = Math.max(28, Math.round(38 * dynamicScale));
+    const headerH = Math.max(28, Math.round(36 * dynamicScale));
+
     ctx.save();
     // Card background
     ctx.beginPath();
@@ -605,7 +616,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     ctx.stroke();
 
     // Header background
-    const headerH = 36;
     ctx.save();
     ctx.beginPath();
     if (typeof (ctx as any).roundRect === 'function') {
@@ -619,19 +629,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     ctx.stroke();
 
     // Header title
-    ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const headerTitleSize = Math.max(10, Math.round(12 * dynamicScale));
+    ctx.font = `bold ${headerTitleSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
     ctx.fillStyle = '#387eb8';
     ctx.textBaseline = 'middle';
     ctx.fillText('Python 3', x + 12, y + headerH / 2);
 
-    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+    ctx.font = `${headerTitleSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
     ctx.fillStyle = isDark ? '#d4d4d8' : '#475569';
-    ctx.fillText(block.title || 'script.py', x + 75, y + headerH / 2);
+    ctx.fillText(block.title || 'script.py', x + 12 + Math.round(55 * dynamicScale), y + headerH / 2);
     ctx.restore();
 
     if (!block.isMinimized) {
       // Line numbers gutter
-      const gutterW = 38;
       ctx.fillStyle = isDark ? '#1f1f23' : '#f8fafc';
       ctx.fillRect(x + 1, y + headerH, gutterW, h - headerH - 1);
       ctx.strokeStyle = isDark ? '#2e2e33' : '#f1f5f9';
@@ -642,17 +652,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
       // Code lines
       const lines = (block.code || '').split('\n');
-      const lineH = 19;
-      ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+      ctx.font = `${codeFontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
       ctx.textBaseline = 'top';
 
       lines.forEach((line, i) => {
-        const lineY = y + headerH + 8 + i * lineH;
+        const lineY = y + headerH + Math.round(8 * dynamicScale) + i * lineH;
         if (lineY + lineH > y + h - 20) return;
 
         // Line number
         ctx.fillStyle = isDark ? '#52525b' : '#94a3b8';
-        ctx.fillText(String(i + 1), x + 10, lineY);
+        ctx.fillText(String(i + 1), x + Math.max(6, Math.round(8 * dynamicScale)), lineY);
 
         // Code line syntax styling
         if (line.trim().startsWith('#')) {
@@ -662,23 +671,24 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         } else {
           ctx.fillStyle = isDark ? '#f4f4f5' : '#0f172a';
         }
-        ctx.fillText(line, x + gutterW + 10, lineY);
+        ctx.fillText(line, x + gutterW + Math.round(8 * dynamicScale), lineY);
       });
 
       // Output section if present
       if (block.output) {
         const outLines = block.output.split('\n');
-        const outH = Math.min(70, outLines.length * 16 + 12);
+        const outLineH = Math.round(16 * dynamicScale);
+        const outH = Math.min(Math.round(80 * dynamicScale), outLines.length * outLineH + 12);
         const outY = y + h - outH - 8;
         ctx.fillStyle = isDark ? '#1e1e24' : '#f8fafc';
         ctx.fillRect(x + gutterW + 6, outY, w - gutterW - 14, outH);
         ctx.strokeStyle = isDark ? '#323238' : '#e2e8f0';
         ctx.strokeRect(x + gutterW + 6, outY, w - gutterW - 14, outH);
 
-        ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+        ctx.font = `${Math.max(9, Math.round(11 * dynamicScale))}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
         ctx.fillStyle = isDark ? '#a1a1aa' : '#334155';
         outLines.slice(0, 3).forEach((ol, oi) => {
-          ctx.fillText(ol, x + gutterW + 12, outY + 6 + oi * 16);
+          ctx.fillText(ol, x + gutterW + 12, outY + 6 + oi * outLineH);
         });
       }
     }
