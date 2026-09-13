@@ -17,6 +17,31 @@ import { collab, RemoteCursor } from './utils/collaboration';
 import { GoogleGenAI } from "@google/genai";
 import { jsPDF } from "jspdf";
 
+// Utility: generate clean random room ID fallback (e.g. WB-5821)
+function generateLocalRoomCode(): string {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let code = 'WB-';
+  for (let i = 0; i < 4; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+// Utility: safe JSON fetcher that NEVER throws JSON syntax errors on HTML/404 error pages
+async function safeFetchJson<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; data: T | null }> {
+  try {
+    const res = await fetch(url, init);
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('application/json')) {
+      const data = await res.json();
+      return { ok: true, status: res.status, data };
+    }
+    return { ok: false, status: res.status, data: null };
+  } catch (e) {
+    return { ok: false, status: 0, data: null };
+  }
+}
+
 const App: React.FC = () => {
   const [currentTool, setCurrentTool] = useState<ToolType>('pen');
   const [color, setColor] = useState('#ffffff');
@@ -66,51 +91,79 @@ const App: React.FC = () => {
   const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
   const [userCount, setUserCount] = useState(1);
+  const [isServerAvailable, setIsServerAvailable] = useState<boolean | null>(null);
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
 
   const handleCreateRoom = useCallback(async (): Promise<string> => {
+    let newRoomId = generateLocalRoomCode();
+
     try {
-      const res = await fetch('/api/rooms', {
+      const response = await safeFetchJson<{ id: string }>('/api/rooms', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: newRoomId })
       });
-      const data = await res.json();
-      const newRoomId = data.id;
-      setCurrentRoomId(newRoomId);
-      whiteboardRef.current?.clearBoard();
-      collab.connect(newRoomId);
 
-      const newUrl = `${window.location.pathname}?room=${encodeURIComponent(newRoomId)}`;
-      window.history.replaceState({ path: newUrl }, '', newUrl);
-
-      return newRoomId;
-    } catch (e) {
-      console.error('Failed to create room', e);
-      throw e;
+      if (response.ok && response.data?.id) {
+        newRoomId = response.data.id;
+        setIsServerAvailable(true);
+      } else {
+        // Running on Vercel or static hosting without server.ts
+        setIsServerAvailable(false);
+      }
+    } catch (_) {
+      setIsServerAvailable(false);
     }
+
+    setCurrentRoomId(newRoomId);
+    whiteboardRef.current?.clearBoard();
+    collab.connect(newRoomId);
+
+    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(newRoomId)}`;
+    window.history.replaceState({ path: newUrl }, '', newUrl);
+
+    try {
+      localStorage.setItem(`mathters_room_${newRoomId}`, JSON.stringify({ strokes: [], codeBlocks: [], updatedAt: Date.now() }));
+    } catch (_) {}
+
+    return newRoomId;
   }, []);
 
   const handleJoinRoom = useCallback(async (roomId: string): Promise<{ success: boolean; error?: string }> => {
     const clean = roomId.trim().toUpperCase();
-    try {
-      const res = await fetch(`/api/rooms/${encodeURIComponent(clean)}`);
-      const data = await res.json();
-      if (!data.exists) {
+    if (!clean) {
+      return { success: false, error: 'Пожалуйста, введите код доступа' };
+    }
+
+    const response = await safeFetchJson<{ exists: boolean }>(`/api/rooms/${encodeURIComponent(clean)}`);
+    if (response.ok) {
+      setIsServerAvailable(true);
+      if (!response.data?.exists) {
         return {
           success: false,
-          error: `Доска с кодом "${clean}" не найдена. Проверьте правильность кода или создайте новую.`
+          error: `Доска с кодом "${clean}" не найдена на сервере.`
         };
       }
-      setCurrentRoomId(clean);
-      collab.connect(clean);
-      const newUrl = `${window.location.pathname}?room=${encodeURIComponent(clean)}`;
-      window.history.replaceState({ path: newUrl }, '', newUrl);
-      setIsWelcomeModalOpen(false);
-      return { success: true };
-    } catch (err) {
-      console.error('Failed to join room', err);
-      return { success: false, error: 'Ошибка подключения к серверу' };
+    } else {
+      // Server not reachable (e.g. Vercel static hosting)
+      setIsServerAvailable(false);
     }
+
+    // Load any locally saved data if available
+    const localSaved = localStorage.getItem(`mathters_room_${clean}`);
+    if (localSaved) {
+      try {
+        const parsed = JSON.parse(localSaved);
+        whiteboardRef.current?.loadRoomState(parsed.strokes || [], parsed.codeBlocks || []);
+      } catch (_) {}
+    }
+
+    setCurrentRoomId(clean);
+    collab.connect(clean);
+    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(clean)}`;
+    window.history.replaceState({ path: newUrl }, '', newUrl);
+    setIsWelcomeModalOpen(false);
+    return { success: true };
   }, []);
 
   // Check URL on initial load and handle room auto-join or modal display
@@ -119,19 +172,28 @@ const App: React.FC = () => {
     const roomFromUrl = params.get('room') || params.get('board');
     if (roomFromUrl) {
       const clean = roomFromUrl.trim().toUpperCase();
-      fetch(`/api/rooms/${encodeURIComponent(clean)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.exists) {
+      safeFetchJson<{ exists: boolean }>(`/api/rooms/${encodeURIComponent(clean)}`).then(response => {
+        if (response.ok) {
+          setIsServerAvailable(true);
+          if (response.data?.exists) {
             setCurrentRoomId(clean);
             collab.connect(clean);
-          } else {
-            setIsWelcomeModalOpen(true);
+            return;
           }
-        })
-        .catch(() => {
-          setIsWelcomeModalOpen(true);
-        });
+        } else {
+          setIsServerAvailable(false);
+        }
+
+        const localSaved = localStorage.getItem(`mathters_room_${clean}`);
+        if (localSaved) {
+          try {
+            const parsed = JSON.parse(localSaved);
+            whiteboardRef.current?.loadRoomState(parsed.strokes || [], parsed.codeBlocks || []);
+          } catch (_) {}
+        }
+        setCurrentRoomId(clean);
+        collab.connect(clean);
+      });
     } else {
       setIsWelcomeModalOpen(true);
     }
@@ -172,6 +234,10 @@ const App: React.FC = () => {
         }
         case 'cursors_updated': {
           setRemoteCursors(event.data);
+          break;
+        }
+        case 'connection_status': {
+          setIsServerAvailable(event.data === 'online');
           break;
         }
       }
@@ -572,6 +638,7 @@ const App: React.FC = () => {
         isVisible={isUIVisible}
         roomId={currentRoomId}
         userCount={userCount}
+        isServerOnline={isServerAvailable}
         onOpenRoomModal={() => setIsWelcomeModalOpen(true)}
       />
       <Toolbar 

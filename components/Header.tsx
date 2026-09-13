@@ -12,6 +12,7 @@ interface HeaderProps {
   isVisible?: boolean;
   roomId?: string | null;
   userCount?: number;
+  isServerOnline?: boolean | null;
   onOpenRoomModal?: () => void;
 }
 
@@ -25,6 +26,7 @@ const Header: React.FC<HeaderProps> = ({
   isVisible = true,
   roomId,
   userCount = 1,
+  isServerOnline = null,
   onOpenRoomModal
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -143,11 +145,15 @@ const Header: React.FC<HeaderProps> = ({
               className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 border ${
                 isDarkMode ? 'bg-[#18181b] border-[#3f3f46] text-gray-300' : 'bg-gray-100 border-gray-300 text-gray-700'
               }`}
-              title={`Сейчас на доске: ${userCount} ${userCount === 1 ? 'участник' : 'участника'}`}
+              title={
+                isServerOnline === false 
+                  ? 'Автономный режим (Vercel). Данные доски сохраняются в браузере. Для одновременного онлайна с разных ПК нужен Node.js бэкенд (Render, Railway).' 
+                  : `Сейчас на доске: ${userCount} ${userCount === 1 ? 'участник' : 'участника'}`
+              }
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className={`w-2 h-2 rounded-full ${isServerOnline === false ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
               <Users className="w-3.5 h-3.5 opacity-70" />
-              <span>{userCount}</span>
+              <span>{isServerOnline === false ? 'Автономно' : userCount}</span>
             </div>
 
             {onOpenRoomModal && (
