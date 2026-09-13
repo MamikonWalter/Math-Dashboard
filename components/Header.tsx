@@ -142,18 +142,16 @@ const Header: React.FC<HeaderProps> = ({
             </button>
 
             <div 
-              className={`px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 border ${
-                isDarkMode ? 'bg-[#18181b] border-[#3f3f46] text-gray-300' : 'bg-gray-100 border-gray-300 text-gray-700'
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition-colors ${
+                userCount > 1
+                  ? isDarkMode ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-400' : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                  : isDarkMode ? 'bg-[#18181b] border-[#3f3f46] text-gray-300' : 'bg-gray-100 border-gray-300 text-gray-700'
               }`}
-              title={
-                isServerOnline === false 
-                  ? 'Автономный режим (Vercel). Данные доски сохраняются в браузере. Для одновременного онлайна с разных ПК нужен Node.js бэкенд (Render, Railway).' 
-                  : `Сейчас на доске: ${userCount} ${userCount === 1 ? 'участник' : 'участника'}`
-              }
+              title={`Совместное рисование активно (работает на любых устройствах: ПК, планшет, телефон). Сейчас на доске: ${userCount} ${userCount === 1 ? 'участник' : 'участника'}`}
             >
-              <span className={`w-2 h-2 rounded-full ${isServerOnline === false ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
-              <Users className="w-3.5 h-3.5 opacity-70" />
-              <span>{isServerOnline === false ? 'Автономно' : userCount}</span>
+              <span className={`w-2 h-2 rounded-full ${userCount > 1 ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-400'}`} />
+              <Users className="w-3.5 h-3.5 opacity-80" />
+              <span>{userCount > 1 ? `${userCount} в сети` : '1 в сети'}</span>
             </div>
 
             {onOpenRoomModal && (

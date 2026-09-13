@@ -151,7 +151,7 @@ const RoomWelcomeModal: React.FC<RoomWelcomeModalProps> = ({
                 {createdRoomCode}
               </div>
               <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                Передайте этот код участникам, чтобы они подключились к вашей доске
+                Передайте этот код участникам или откройте ссылку на телефоне/планшете — рисование синхронизируется в реальном времени!
               </p>
             </div>
 
