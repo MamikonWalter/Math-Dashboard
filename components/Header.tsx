@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Share2, Save, FolderOpen, Image as ImageIcon, Moon, Sun, Users, Copy, Check, Cloud } from 'lucide-react';
+import { Share2, Save, FolderOpen, Image as ImageIcon, Moon, Sun, Users, Copy, Check } from 'lucide-react';
 
 interface HeaderProps {
   onClear: () => void;
@@ -154,20 +154,6 @@ const Header: React.FC<HeaderProps> = ({
               <span className={`w-2 h-2 rounded-full ${userCount > 1 ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-400'}`} />
               <Users className="w-3.5 h-3.5 opacity-80" />
               <span>{userCount > 1 ? `${userCount} в сети` : '1 в сети'}</span>
-            </div>
-
-            <div 
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition-colors ${
-                cloudStatus === 'saving'
-                  ? isDarkMode ? 'bg-amber-950/40 border-amber-500/40 text-amber-300' : 'bg-amber-50 border-amber-300 text-amber-700'
-                  : isDarkMode ? 'bg-blue-950/30 border-blue-500/30 text-blue-300' : 'bg-blue-50 border-blue-200 text-blue-700'
-              }`}
-              title="Доска непрерывно сохраняется в облако Google Firestore. Вы можете открыть её по коду на любом компьютере, планшете или смартфоне!"
-            >
-              <Cloud className={`w-3.5 h-3.5 ${cloudStatus === 'saving' ? 'animate-bounce text-amber-400' : 'text-blue-500'}`} />
-              <span className="hidden md:inline">
-                {cloudStatus === 'saving' ? 'Синхронизация...' : 'В облаке Firestore'}
-              </span>
             </div>
 
             {onOpenRoomModal && (
