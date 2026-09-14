@@ -144,8 +144,8 @@ async function startServer() {
     const customCode = req.body?.code ? String(req.body.code).trim().toUpperCase() : null;
     let roomId = customCode || generateRoomCode();
 
-    // If custom code requested and already exists
-    if (customCode && rooms.has(customCode)) {
+    // If custom code requested and already exists (unless reset is requested)
+    if (customCode && rooms.has(customCode) && !req.body?.reset) {
       return res.json({ id: customCode, existed: true });
     }
 

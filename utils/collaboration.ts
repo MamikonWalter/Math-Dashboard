@@ -91,6 +91,10 @@ class CollaborationService {
     this.currentRoomId = roomId.toUpperCase();
     if (userName) this.userName = userName;
 
+    // CRITICAL: Always reset in-memory room strokes & blocks so previous room's data NEVER bleeds into this room
+    this.currentStrokes = [];
+    this.currentBlocks = [];
+
     // 1. Load any existing local data for this room first as fallback
     try {
       const saved = localStorage.getItem(`mathters_room_${this.currentRoomId}`);
@@ -565,6 +569,8 @@ class CollaborationService {
 
   public disconnect() {
     this.currentRoomId = null;
+    this.currentStrokes = [];
+    this.currentBlocks = [];
     clearTimeout(this.reconnectTimer);
     this.cleanupPeer();
     if (this.ws) {

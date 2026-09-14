@@ -123,6 +123,13 @@ export async function saveBoardHybrid(
   // 1. Always save to local cache immediately
   saveLocalBoard(cleanId, strokes, codeBlocks);
 
+  // If newly initializing an empty board, also clear any legacy room cache keys
+  if (immediate && strokes.length === 0 && codeBlocks.length === 0) {
+    try {
+      localStorage.removeItem(`mathters_room_${cleanId}`);
+    } catch (_) {}
+  }
+
   // 2. Clear previous pending debounced Firestore save
   if (firestoreSaveTimers[cleanId]) {
     clearTimeout(firestoreSaveTimers[cleanId]);
@@ -142,7 +149,12 @@ export async function saveBoardHybrid(
         updatedAt: Date.now()
       });
 
-      await setDoc(boardDocRef, payload, { merge: true });
+      if (immediate && strokes.length === 0 && codeBlocks.length === 0) {
+        // Complete overwrite for empty new board initialization
+        await setDoc(boardDocRef, payload);
+      } else {
+        await setDoc(boardDocRef, payload, { merge: true });
+      }
     } catch (err) {
       console.warn(`[Firestore] Could not save board ${cleanId}:`, err);
     }

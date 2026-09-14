@@ -122,7 +122,7 @@ const App: React.FC = () => {
       const response = await safeFetchJson<{ id: string }>('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: newRoomId })
+        body: JSON.stringify({ code: newRoomId, reset: true })
       });
 
       if (response.ok && response.data?.id) {
@@ -135,16 +135,21 @@ const App: React.FC = () => {
       setIsServerAvailable(false);
     }
 
+    // 1. Instantly wipe board clean so new board starts 100% empty
+    whiteboardRef.current?.clearBoard();
+
+    // 2. Set room state
     setCurrentRoomId(newRoomId);
     setLastActiveRoomId(newRoomId);
-    whiteboardRef.current?.clearBoard();
+
+    // 3. Clear local cache and write empty initial state to Firestore
+    saveBoardHybrid(newRoomId, [], [], true);
+
+    // 4. Connect collaboration engine to this fresh room
     collab.connect(newRoomId);
 
     const newUrl = `${window.location.pathname}?room=${encodeURIComponent(newRoomId)}`;
     window.history.replaceState({ path: newUrl }, '', newUrl);
-
-    // Initialize board in Firestore and local storage
-    saveBoardHybrid(newRoomId, [], [], true);
 
     return newRoomId;
   }, []);
@@ -155,13 +160,29 @@ const App: React.FC = () => {
       return { success: false, error: 'Пожалуйста, введите код доступа' };
     }
 
-    // 1. Instantly load from hybrid storage (cloud Firestore + local cache)
+    // 1. Instantly clear canvas to ensure NO leftover drawings from previous boards remain
+    whiteboardRef.current?.clearBoard();
+
+    // 2. Set current room and update URL
+    setCurrentRoomId(clean);
+    setLastActiveRoomId(clean);
+    setIsWelcomeModalOpen(false);
+
+    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(clean)}`;
+    window.history.replaceState({ path: newUrl }, '', newUrl);
+
+    // 3. Connect to collaboration service with fresh room state
+    collab.connect(clean);
+
+    // 4. Fetch persistent cloud state from Firestore/cache for this specific room
     const hybridRes = await loadBoardHybrid(clean);
-    if (hybridRes.data) {
+    if (hybridRes.data && (hybridRes.data.strokes.length > 0 || hybridRes.data.codeBlocks.length > 0)) {
       whiteboardRef.current?.loadRoomState(hybridRes.data.strokes, hybridRes.data.codeBlocks);
+    } else {
+      whiteboardRef.current?.clearBoard();
     }
 
-    // 2. Register with server if needed
+    // 5. Register with server if needed
     safeFetchJson<{ exists: boolean }>(`/api/rooms/${encodeURIComponent(clean)}`).then(res => {
       if (res.ok) {
         setIsServerAvailable(true);
@@ -177,12 +198,6 @@ const App: React.FC = () => {
       }
     });
 
-    setCurrentRoomId(clean);
-    setLastActiveRoomId(clean);
-    collab.connect(clean);
-    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(clean)}`;
-    window.history.replaceState({ path: newUrl }, '', newUrl);
-    setIsWelcomeModalOpen(false);
     return { success: true };
   }, []);
 
@@ -205,16 +220,21 @@ const App: React.FC = () => {
       setCurrentRoomId(clean);
       setLastActiveRoomId(clean);
 
-      // Instant 0ms load from local cache if present
+      // Instantly start with a clean board
+      whiteboardRef.current?.clearBoard();
+
+      // Load local cache if available for THIS room
       const cached = getLocalBoard(clean);
-      if (cached) {
+      if (cached && (cached.strokes.length > 0 || cached.codeBlocks.length > 0)) {
         whiteboardRef.current?.loadRoomState(cached.strokes, cached.codeBlocks);
       }
 
       // Fetch persistent cloud state from Firestore
       loadBoardHybrid(clean).then(res => {
-        if (res.data) {
+        if (res.data && (res.data.strokes.length > 0 || res.data.codeBlocks.length > 0)) {
           whiteboardRef.current?.loadRoomState(res.data.strokes, res.data.codeBlocks);
+        } else if (!cached || (cached.strokes.length === 0 && cached.codeBlocks.length === 0)) {
+          whiteboardRef.current?.clearBoard();
         }
       });
 
@@ -228,6 +248,7 @@ const App: React.FC = () => {
         }
       });
     } else {
+      whiteboardRef.current?.clearBoard();
       setIsWelcomeModalOpen(true);
     }
   }, []);
@@ -262,25 +283,12 @@ const App: React.FC = () => {
     const unsubscribe = collab.subscribe((event) => {
       switch (event.type) {
         case 'init': {
-          const hasServerData = (event.data.strokes && event.data.strokes.length > 0) || 
-                                (event.data.codeBlocks && event.data.codeBlocks.length > 0);
-          const currentSnapshot = whiteboardRef.current?.getSnapshot();
-          const hasClientData = (currentSnapshot?.strokes && currentSnapshot.strokes.length > 0) ||
-                                (currentSnapshot?.codeBlocks && currentSnapshot.codeBlocks.length > 0);
+          const incomingStrokes = Array.isArray(event.data.strokes) ? event.data.strokes : [];
+          const incomingBlocks = Array.isArray(event.data.codeBlocks) ? event.data.codeBlocks : [];
 
-          if (hasServerData) {
-            whiteboardRef.current?.loadRoomState(event.data.strokes, event.data.codeBlocks);
-            if (currentRoomId) {
-              saveBoardHybrid(currentRoomId, event.data.strokes, event.data.codeBlocks);
-            }
-          } else if (hasClientData && currentSnapshot) {
-            // Populate newly restarted server room with our persistent board state
-            collab.sendStrokesUpdate(currentSnapshot.strokes);
-            if (currentSnapshot.codeBlocks) {
-              currentSnapshot.codeBlocks.forEach(b => collab.sendCodeBlockCreate(b));
-            }
-          }
-          setUserCount(event.data.usersCount);
+          // Always set room state directly from room authority (server / peer)
+          whiteboardRef.current?.loadRoomState(incomingStrokes, incomingBlocks);
+          setUserCount(event.data.usersCount || 1);
           break;
         }
         case 'stroke_added': {
@@ -684,7 +692,15 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handleClear = () => { if(window.confirm("Очистить доску?")) window.location.reload(); };
+  const handleClear = () => { 
+    if (window.confirm("Очистить доску?")) {
+      whiteboardRef.current?.clearBoard();
+      if (currentRoomId) {
+        collab.sendStrokesUpdate([]);
+        saveBoardHybrid(currentRoomId, [], [], true);
+      }
+    }
+  };
   const handleSave = () => {
     if (whiteboardRef.current) {
       const data = whiteboardRef.current.getSnapshot();
