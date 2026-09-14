@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Shared whiteboards accessible by their room code
+    match /boards/{boardId} {
+      allow read, write: if true;
+    }
+  }
+}

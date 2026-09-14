@@ -1,0 +1,34 @@
+{
+  "entities": {
+    "Board": {
+      "title": "Board",
+      "description": "Interactive whiteboard canvas with strokes and code blocks",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique room code of the board (e.g. WB-ABCD)"
+        },
+        "strokes": {
+          "type": "array",
+          "description": "List of drawn strokes on the board"
+        },
+        "codeBlocks": {
+          "type": "array",
+          "description": "List of interactive Python code blocks"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Last modified timestamp in milliseconds"
+        }
+      },
+      "required": ["id", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/boards/{boardId}": {
+      "schema": "Board",
+      "description": "Whiteboard room document storing drawings and code blocks"
+    }
+  }
+}

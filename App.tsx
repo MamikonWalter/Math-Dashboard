@@ -16,6 +16,14 @@ import RoomWelcomeModal from './components/RoomWelcomeModal';
 import { collab, RemoteCursor } from './utils/collaboration';
 import { GoogleGenAI } from "@google/genai";
 import { jsPDF } from "jspdf";
+import { 
+  saveBoardHybrid, 
+  loadBoardHybrid, 
+  getLocalBoard, 
+  getLastActiveRoomId, 
+  setLastActiveRoomId,
+  subscribeToBoardCloud 
+} from './utils/firebase';
 
 // Utility: generate clean random room ID fallback (e.g. WB-5821)
 function generateLocalRoomCode(): string {
@@ -93,6 +101,19 @@ const App: React.FC = () => {
   const [userCount, setUserCount] = useState(1);
   const [isServerAvailable, setIsServerAvailable] = useState<boolean | null>(null);
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'saving' | 'offline'>('synced');
+
+  // Unified persistent saving to Firestore and LocalStorage
+  const persistBoardChanges = useCallback((overrideStrokes?: any[], overrideBlocks?: any[]) => {
+    if (!currentRoomId) return;
+    const snapshot = whiteboardRef.current?.getSnapshot();
+    const strokes = overrideStrokes || snapshot?.strokes || [];
+    const codeBlocks = overrideBlocks || snapshot?.codeBlocks || [];
+
+    setCloudSyncStatus('saving');
+    saveBoardHybrid(currentRoomId, strokes, codeBlocks);
+    setTimeout(() => setCloudSyncStatus('synced'), 1000);
+  }, [currentRoomId]);
 
   const handleCreateRoom = useCallback(async (): Promise<string> => {
     let newRoomId = generateLocalRoomCode();
@@ -108,7 +129,6 @@ const App: React.FC = () => {
         newRoomId = response.data.id;
         setIsServerAvailable(true);
       } else {
-        // Running on Vercel or static hosting without server.ts
         setIsServerAvailable(false);
       }
     } catch (_) {
@@ -116,15 +136,15 @@ const App: React.FC = () => {
     }
 
     setCurrentRoomId(newRoomId);
+    setLastActiveRoomId(newRoomId);
     whiteboardRef.current?.clearBoard();
     collab.connect(newRoomId);
 
     const newUrl = `${window.location.pathname}?room=${encodeURIComponent(newRoomId)}`;
     window.history.replaceState({ path: newUrl }, '', newUrl);
 
-    try {
-      localStorage.setItem(`mathters_room_${newRoomId}`, JSON.stringify({ strokes: [], codeBlocks: [], updatedAt: Date.now() }));
-    } catch (_) {}
+    // Initialize board in Firestore and local storage
+    saveBoardHybrid(newRoomId, [], [], true);
 
     return newRoomId;
   }, []);
@@ -135,30 +155,30 @@ const App: React.FC = () => {
       return { success: false, error: 'Пожалуйста, введите код доступа' };
     }
 
-    const response = await safeFetchJson<{ exists: boolean }>(`/api/rooms/${encodeURIComponent(clean)}`);
-    if (response.ok) {
-      setIsServerAvailable(true);
-      if (!response.data?.exists) {
-        return {
-          success: false,
-          error: `Доска с кодом "${clean}" не найдена на сервере.`
-        };
-      }
-    } else {
-      // Server not reachable (e.g. Vercel static hosting)
-      setIsServerAvailable(false);
+    // 1. Instantly load from hybrid storage (cloud Firestore + local cache)
+    const hybridRes = await loadBoardHybrid(clean);
+    if (hybridRes.data) {
+      whiteboardRef.current?.loadRoomState(hybridRes.data.strokes, hybridRes.data.codeBlocks);
     }
 
-    // Load any locally saved data if available
-    const localSaved = localStorage.getItem(`mathters_room_${clean}`);
-    if (localSaved) {
-      try {
-        const parsed = JSON.parse(localSaved);
-        whiteboardRef.current?.loadRoomState(parsed.strokes || [], parsed.codeBlocks || []);
-      } catch (_) {}
-    }
+    // 2. Register with server if needed
+    safeFetchJson<{ exists: boolean }>(`/api/rooms/${encodeURIComponent(clean)}`).then(res => {
+      if (res.ok) {
+        setIsServerAvailable(true);
+        if (!res.data?.exists) {
+          safeFetchJson('/api/rooms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: clean })
+          });
+        }
+      } else {
+        setIsServerAvailable(false);
+      }
+    });
 
     setCurrentRoomId(clean);
+    setLastActiveRoomId(clean);
     collab.connect(clean);
     const newUrl = `${window.location.pathname}?room=${encodeURIComponent(clean)}`;
     window.history.replaceState({ path: newUrl }, '', newUrl);
@@ -166,45 +186,100 @@ const App: React.FC = () => {
     return { success: true };
   }, []);
 
-  // Check URL on initial load and handle room auto-join or modal display
+  // Check URL or previous room on initial load
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const roomFromUrl = params.get('room') || params.get('board');
-    if (roomFromUrl) {
-      const clean = roomFromUrl.trim().toUpperCase();
+    let targetRoom = params.get('room') || params.get('board');
+
+    if (!targetRoom) {
+      const lastRoom = getLastActiveRoomId();
+      if (lastRoom) {
+        targetRoom = lastRoom;
+        const newUrl = `${window.location.pathname}?room=${encodeURIComponent(lastRoom)}`;
+        window.history.replaceState({ path: newUrl }, '', newUrl);
+      }
+    }
+
+    if (targetRoom) {
+      const clean = targetRoom.trim().toUpperCase();
+      setCurrentRoomId(clean);
+      setLastActiveRoomId(clean);
+
+      // Instant 0ms load from local cache if present
+      const cached = getLocalBoard(clean);
+      if (cached) {
+        whiteboardRef.current?.loadRoomState(cached.strokes, cached.codeBlocks);
+      }
+
+      // Fetch persistent cloud state from Firestore
+      loadBoardHybrid(clean).then(res => {
+        if (res.data) {
+          whiteboardRef.current?.loadRoomState(res.data.strokes, res.data.codeBlocks);
+        }
+      });
+
+      collab.connect(clean);
+
       safeFetchJson<{ exists: boolean }>(`/api/rooms/${encodeURIComponent(clean)}`).then(response => {
         if (response.ok) {
           setIsServerAvailable(true);
-          if (response.data?.exists) {
-            setCurrentRoomId(clean);
-            collab.connect(clean);
-            return;
-          }
         } else {
           setIsServerAvailable(false);
         }
-
-        const localSaved = localStorage.getItem(`mathters_room_${clean}`);
-        if (localSaved) {
-          try {
-            const parsed = JSON.parse(localSaved);
-            whiteboardRef.current?.loadRoomState(parsed.strokes || [], parsed.codeBlocks || []);
-          } catch (_) {}
-        }
-        setCurrentRoomId(clean);
-        collab.connect(clean);
       });
     } else {
       setIsWelcomeModalOpen(true);
     }
   }, []);
 
+  // Real-time Firestore synchronization for cross-device updates
+  useEffect(() => {
+    if (!currentRoomId) return;
+
+    const unsubscribe = subscribeToBoardCloud(currentRoomId, (cloudBoard) => {
+      // If cloud was updated from another device, reflect strokes and blocks
+      const snapshot = whiteboardRef.current?.getSnapshot();
+      if (snapshot && cloudBoard.updatedAt > 0) {
+        const localStrokesCount = snapshot.strokes.length;
+        const localBlocksCount = (snapshot.codeBlocks || []).length;
+        const cloudStrokesCount = cloudBoard.strokes.length;
+        const cloudBlocksCount = cloudBoard.codeBlocks.length;
+
+        // If another device added items or modified the board
+        if (cloudStrokesCount !== localStrokesCount || cloudBlocksCount !== localBlocksCount) {
+          whiteboardRef.current?.loadRoomState(cloudBoard.strokes, cloudBoard.codeBlocks);
+        }
+      }
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [currentRoomId]);
+
   // Listen to collaboration events
   useEffect(() => {
     const unsubscribe = collab.subscribe((event) => {
       switch (event.type) {
         case 'init': {
-          whiteboardRef.current?.loadRoomState(event.data.strokes, event.data.codeBlocks);
+          const hasServerData = (event.data.strokes && event.data.strokes.length > 0) || 
+                                (event.data.codeBlocks && event.data.codeBlocks.length > 0);
+          const currentSnapshot = whiteboardRef.current?.getSnapshot();
+          const hasClientData = (currentSnapshot?.strokes && currentSnapshot.strokes.length > 0) ||
+                                (currentSnapshot?.codeBlocks && currentSnapshot.codeBlocks.length > 0);
+
+          if (hasServerData) {
+            whiteboardRef.current?.loadRoomState(event.data.strokes, event.data.codeBlocks);
+            if (currentRoomId) {
+              saveBoardHybrid(currentRoomId, event.data.strokes, event.data.codeBlocks);
+            }
+          } else if (hasClientData && currentSnapshot) {
+            // Populate newly restarted server room with our persistent board state
+            collab.sendStrokesUpdate(currentSnapshot.strokes);
+            if (currentSnapshot.codeBlocks) {
+              currentSnapshot.codeBlocks.forEach(b => collab.sendCodeBlockCreate(b));
+            }
+          }
           setUserCount(event.data.usersCount);
           break;
         }
@@ -639,6 +714,7 @@ const App: React.FC = () => {
         roomId={currentRoomId}
         userCount={userCount}
         isServerOnline={isServerAvailable}
+        cloudStatus={cloudSyncStatus}
         onOpenRoomModal={() => setIsWelcomeModalOpen(true)}
       />
       <Toolbar 
@@ -722,10 +798,22 @@ const App: React.FC = () => {
         onDrawStart={handleDrawStart} 
         onZoomChange={setZoom} 
         onShapeSelect={handleShapeSelect}
-        onStrokesChanged={(strokes) => collab.sendStrokesUpdate(strokes)}
-        onCodeBlockCreated={(block) => collab.sendCodeBlockCreate(block)}
-        onCodeBlockUpdated={(block) => collab.sendCodeBlockUpdate(block)}
-        onCodeBlockDeleted={(blockId) => collab.sendCodeBlockDelete(blockId)}
+        onStrokesChanged={(strokes) => {
+          collab.sendStrokesUpdate(strokes);
+          persistBoardChanges(strokes);
+        }}
+        onCodeBlockCreated={(block) => {
+          collab.sendCodeBlockCreate(block);
+          persistBoardChanges();
+        }}
+        onCodeBlockUpdated={(block) => {
+          collab.sendCodeBlockUpdate(block);
+          persistBoardChanges();
+        }}
+        onCodeBlockDeleted={(blockId) => {
+          collab.sendCodeBlockDelete(blockId);
+          persistBoardChanges();
+        }}
         onCursorMove={(x, y) => collab.sendCursor(x, y)}
         remoteCursors={remoteCursors}
       />

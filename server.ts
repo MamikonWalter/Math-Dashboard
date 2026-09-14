@@ -125,7 +125,7 @@ async function startServer() {
     const rawId = (req.params.id || '').trim().toUpperCase();
     const room = rooms.get(rawId);
     if (!room) {
-      return res.status(404).json({ exists: false, error: 'Доска с таким кодом не найдена' });
+      return res.json({ exists: false, error: 'Доска с таким кодом не найдена' });
     }
     return res.json({
       exists: true,

@@ -1802,6 +1802,7 @@ print(f"solve({val}) =", solve(val))
             selectedIndicesRef.current.clear(); 
             onHistoryChange(historyStepRef.current > 0, true); 
             render();
+            if (onStrokesChanged) onStrokesChanged(step.strokes);
         }
     }
     if (triggerRedo > prevRedoTrigger.current) {
@@ -1814,6 +1815,7 @@ print(f"solve({val}) =", solve(val))
             selectedIndicesRef.current.clear(); 
             onHistoryChange(true, historyStepRef.current < historyRef.current.length - 1); 
             render();
+            if (onStrokesChanged) onStrokesChanged(step.strokes);
         }
     }
   }, [triggerUndo, triggerRedo, render, onHistoryChange]);
