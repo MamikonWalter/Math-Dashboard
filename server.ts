@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
+import { spawn } from 'child_process';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 
@@ -158,6 +159,101 @@ async function startServer() {
     rooms.set(roomId, newRoom);
     scheduleSave();
     return res.json({ id: roomId, created: true });
+  });
+
+  // Execute Python Code via native Python 3 with timeout and output limit
+  app.post('/api/run-python', (req, res) => {
+    const code = typeof req.body?.code === 'string' ? req.body.code : '';
+    if (!code.trim()) {
+      return res.json({ success: true, stdout: '', stderr: '', executionTimeMs: 0 });
+    }
+
+    const startTime = Date.now();
+    let stdout = '';
+    let stderr = '';
+    let isKilled = false;
+    let responded = false;
+
+    const child = spawn('python3', ['-u', '-'], {
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUNBUFFERED: '1',
+        LC_ALL: 'C.UTF-8'
+      }
+    });
+
+    const MAX_OUTPUT = 65536; // 64 KB limit
+
+    const timeout = setTimeout(() => {
+      isKilled = true;
+      try {
+        child.kill('SIGKILL');
+      } catch (_) {}
+    }, 6000); // 6 sec timeout
+
+    child.stdout.on('data', (chunk) => {
+      if (stdout.length < MAX_OUTPUT) {
+        stdout += chunk.toString('utf-8');
+        if (stdout.length >= MAX_OUTPUT) {
+          stdout += '\n... [Вывод превысил лимит 64КБ и был обрезан]';
+          try { child.kill('SIGTERM'); } catch (_) {}
+        }
+      }
+    });
+
+    child.stderr.on('data', (chunk) => {
+      if (stderr.length < MAX_OUTPUT) {
+        stderr += chunk.toString('utf-8');
+      }
+    });
+
+    const finish = (codeNum: number | null, errMsg?: string) => {
+      if (responded) return;
+      responded = true;
+      clearTimeout(timeout);
+      const elapsed = Date.now() - startTime;
+      if (isKilled) {
+        return res.json({
+          success: false,
+          error: 'Таймаут выполнения (6 секунд). Возможно, в коде бесконечный цикл.',
+          stdout,
+          stderr: stderr || 'Execution timed out',
+          executionTimeMs: elapsed
+        });
+      }
+      if (errMsg) {
+        return res.json({
+          success: false,
+          error: errMsg,
+          stdout,
+          stderr: stderr || errMsg,
+          executionTimeMs: elapsed
+        });
+      }
+      return res.json({
+        success: codeNum === 0,
+        exitCode: codeNum,
+        stdout,
+        stderr,
+        executionTimeMs: elapsed
+      });
+    };
+
+    child.on('close', (exitCode) => {
+      finish(exitCode);
+    });
+
+    child.on('error', (err) => {
+      finish(null, `Не удалось запустить процесс Python 3: ${err.message}`);
+    });
+
+    try {
+      child.stdin.write(code);
+      child.stdin.end();
+    } catch (writeErr: any) {
+      finish(null, `Ошибка записи в процесс: ${writeErr.message}`);
+    }
   });
 
   // WebSocket Server

@@ -13,6 +13,7 @@ import {
   FileCode2
 } from 'lucide-react';
 import { CodeBlockItem } from '../types';
+import { executePythonCode } from '../utils/pythonRunner';
 
 interface PythonCodeBlockProps {
   block: CodeBlockItem;
@@ -29,6 +30,62 @@ interface PythonCodeBlockProps {
 
 // Preset examples for quick math & algorithm experimentation
 const PYTHON_PRESETS = [
+  {
+    name: 'Срезы строк и списков (Slicing)',
+    code: `# Срезы строк и списков в Python
+text = "Mathters Whiteboard"
+print("Исходный текст:", text)
+print("Срез [0:8]:", text[0:8])
+print("Срез [-10:]:", text[-10:])
+print("Срез с шагом 2 [::2]:", text[::2])
+print("Разворот строки [::-1]:", text[::-1])
+
+numbers = list(range(1, 11))
+print("\\nСписок чисел:", numbers)
+print("Первые 5 чисел [:5]:", numbers[:5])
+print("Чётные через срез [1::2]:", numbers[1::2])
+print("Последние 3 числа [-3:]:", numbers[-3:])
+`
+  },
+  {
+    name: 'Преобразования типов и int()',
+    code: `# Использование int(), float(), str(), bin(), hex()
+val_str = "42"
+val_int = int(val_str)
+print("Строка '42' в int:", val_int, type(val_int).__name__)
+
+# Преобразование систем счисления: int(str, base)
+bin_val = "101010"
+print(f"int('{bin_val}', 2) =", int(bin_val, 2))
+hex_val = "2A"
+print(f"int('{hex_val}', 16) =", int(hex_val, 16))
+
+# Округление и float
+pi_approx = float("3.14159265")
+print(f"float: {pi_approx}, int(pi) = {int(pi_approx)}")
+print(f"bin(42) = {bin(42)}, hex(42) = {hex(42)}")
+`
+  },
+  {
+    name: 'Генераторы списков (Comprehensions)',
+    code: `# Генераторы списков (List Comprehensions) и словарей
+squares = [x**2 for x in range(1, 11)]
+print("Квадраты чисел 1..10:", squares)
+
+even_squares = [x**2 for x in range(1, 15) if x % 2 == 0]
+print("Квадраты чётных:", even_squares)
+
+# Генератор словаря кубов
+cubes_dict = {x: x**3 for x in range(1, 6)}
+print("Словарь кубов:", cubes_dict)
+
+# Таблица умножения
+matrix = [[i * j for j in range(1, 5)] for i in range(1, 5)]
+print("Матрица 4x4:")
+for row in matrix:
+    print(row)
+`
+  },
   {
     name: 'Квадратное уравнение',
     code: `# Решение квадратного уравнения: ax² + bx + c = 0
@@ -52,19 +109,19 @@ else:
 `
   },
   {
-    name: 'Тригонометрия и функции',
-    code: `# Расчет значений тригонометрических функций
+    name: 'Математика и статистика',
+    code: `# Модули math и statistics
 import math
+import statistics
 
-angles_deg = [0, 30, 45, 60, 90, 180]
-
-print("Угол (°) |   sin(x)  |   cos(x)")
-print("-" * 32)
-for deg in angles_deg:
-    rad = math.radians(deg)
-    s = round(math.sin(rad), 4)
-    c = round(math.cos(rad), 4)
-    print(f"{deg:7d}° | {s:9.4f} | {c:8.4f}")
+data = [12, 15, 23, 42, 56, 78, 92, 105, 42]
+print("Набор данных:", data)
+print("Среднее (mean):", statistics.mean(data))
+print("Медиана (median):", statistics.median(data))
+print("Мода (mode):", statistics.mode(data))
+print("Стандартное отклонение:", round(statistics.stdev(data), 3))
+print("НОД(84, 36) =", math.gcd(84, 36))
+print("Число сочетаний C(10, 3) =", math.comb(10, 3))
 `
   },
   {
@@ -74,7 +131,7 @@ def fibonacci(n):
     seq = [0, 1]
     while len(seq) < n:
         seq.append(seq[-1] + seq[-2])
-    return seq
+    return seq[:n]
 
 n = 12
 fibs = fibonacci(n)
@@ -120,6 +177,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [showPresets, setShowPresets] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
@@ -322,258 +380,24 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
     }
   };
 
-  // Safe client-side Python execution engine
-  const runPythonCode = () => {
+  // Python execution engine with native server runner and Pyodide WebAssembly fallback
+  const runPythonCode = async () => {
+    if (isRunning) return;
     setIsRunning(true);
-    const startTime = performance.now();
-    const outputLines: string[] = [];
-
-    setTimeout(() => {
-      try {
-        const rawCode = block.code;
-        
-        // Custom print implementation
-        const customPrint = (...args: any[]) => {
-          const str = args.map(a => {
-            if (typeof a === 'object' && a !== null) {
-              try {
-                return JSON.stringify(a);
-              } catch {
-                return String(a);
-              }
-            }
-            return String(a);
-          }).join(' ');
-          outputLines.push(str);
-        };
-
-        // Math module simulation
-        const mathModule = {
-          pi: Math.PI,
-          e: Math.E,
-          tau: Math.PI * 2,
-          sqrt: Math.sqrt,
-          sin: Math.sin,
-          cos: Math.cos,
-          tan: Math.tan,
-          asin: Math.asin,
-          acos: Math.acos,
-          atan: Math.atan,
-          atan2: Math.atan2,
-          degrees: (rad: number) => (rad * 180) / Math.PI,
-          radians: (deg: number) => (deg * Math.PI) / 180,
-          exp: Math.exp,
-          log: Math.log,
-          log10: Math.log10,
-          log2: Math.log2,
-          pow: Math.pow,
-          floor: Math.floor,
-          ceil: Math.ceil,
-          factorial: (n: number) => {
-            let res = 1;
-            for (let i = 2; i <= n; i++) res *= i;
-            return res;
-          },
-          gcd: (a: number, b: number): number => (!b ? a : mathModule.gcd(b, a % b)),
-          comb: (n: number, k: number) => {
-            if (k < 0 || k > n) return 0;
-            if (k === 0 || k === n) return 1;
-            let c = 1;
-            for (let i = 1; i <= k; i++) c = (c * (n - (k - i))) / i;
-            return c;
-          }
-        };
-
-        // Helper built-ins
-        const pyRange = (...args: number[]) => {
-          let start = 0, stop = 0, step = 1;
-          if (args.length === 1) stop = args[0];
-          else if (args.length === 2) { start = args[0]; stop = args[1]; }
-          else if (args.length >= 3) { start = args[0]; stop = args[1]; step = args[2]; }
-          const res: number[] = [];
-          if (step > 0) {
-            for (let i = start; i < stop; i += step) res.push(i);
-          } else if (step < 0) {
-            for (let i = start; i > stop; i += step) res.push(i);
-          }
-          return res;
-        };
-
-        const pyLen = (obj: any) => (obj && typeof obj.length === 'number' ? obj.length : Object.keys(obj || {}).length);
-        const pySum = (arr: number[]) => (Array.isArray(arr) ? arr.reduce((acc, v) => acc + v, 0) : 0);
-        const pyMin = (...args: any[]) => {
-          const list = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
-          return Math.min(...list);
-        };
-        const pyMax = (...args: any[]) => {
-          const list = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
-          return Math.max(...list);
-        };
-        const pyRound = (num: number, ndigits: number = 0) => {
-          const factor = Math.pow(10, ndigits);
-          return Math.round(num * factor) / factor;
-        };
-        const pyAbs = Math.abs;
-
-        // Transform simple Python syntax to JS for execution:
-        // 1. Remove comments for execution
-        // 2. Handle simple imports (e.g. import math)
-        // 3. f-strings: f"hello {x}" -> `hello ${x}`
-        // 4. Exponential operator: ** is supported in JS
-        // 5. Integer division: // -> Math.floor(a / b) or ~~
-        // 6. elif -> else if
-        // 7. and / or / not -> && / || / !
-        // 8. True / False / None -> true / false / null
-        // 9. def name(args): -> function name(args) {
-        // 10. print(...) -> print(...)
-        
-        // Split into lines to convert Python indentation blocks into braces
-        const lines = rawCode.split('\n');
-        const jsLines: string[] = [];
-        const indentStack: number[] = [0];
-
-        lines.forEach((line) => {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith('#')) return;
-
-          // Detect line indentation
-          const indent = line.search(/\S|$/);
-          
-          while (indentStack.length > 1 && indent < indentStack[indentStack.length - 1]) {
-            indentStack.pop();
-            jsLines.push('}');
-          }
-
-          let converted = trimmed;
-
-          // Replace python keywords / operators
-          // Handle f-strings: f"..." or f'...'
-          converted = converted.replace(/f"([^"]*)"/g, (_, content) => {
-            const parsed = content.replace(/\{([^}]+)\}/g, '${$1}');
-            return '`' + parsed + '`';
-          });
-          converted = converted.replace(/f'([^']*)'/g, (_, content) => {
-            const parsed = content.replace(/\{([^}]+)\}/g, '${$1}');
-            return '`' + parsed + '`';
-          });
-
-          // Boolean / None literals
-          converted = converted.replace(/\bTrue\b/g, 'true')
-                               .replace(/\bFalse\b/g, 'false')
-                               .replace(/\bNone\b/g, 'null');
-
-          // Logic keywords
-          converted = converted.replace(/\band\b/g, '&&')
-                               .replace(/\bor\b/g, '||')
-                               .replace(/\bnot\s+/g, '!');
-
-          // Comments at end of line
-          converted = converted.replace(/(?<!["'`])#.*$/, '');
-
-          // Replace // with integer division Math.floor(a / b)
-          converted = converted.replace(/([a-zA-Z0-9_\(\)]+)\s*\/\/\s*([a-zA-Z0-9_\(\)]+)/g, 'Math.floor($1 / $2)');
-
-          // Imports
-          if (converted.startsWith('import math') || converted.startsWith('from math import')) {
-            return; // math is already available in scope
-          }
-
-          // Handle def function
-          if (converted.startsWith('def ') && converted.endsWith(':')) {
-            const header = converted.slice(4, -1).trim();
-            jsLines.push(`function ${header} {`);
-            indentStack.push(indent + 4);
-            return;
-          }
-
-          // Handle if / elif / else
-          if (converted.startsWith('if ') && converted.endsWith(':')) {
-            const cond = converted.slice(3, -1).trim();
-            jsLines.push(`if (${cond}) {`);
-            indentStack.push(indent + 4);
-            return;
-          }
-          if (converted.startsWith('elif ') && converted.endsWith(':')) {
-            const cond = converted.slice(5, -1).trim();
-            jsLines.push(`} else if (${cond}) {`);
-            return;
-          }
-          if (converted === 'else:') {
-            jsLines.push(`} else {`);
-            return;
-          }
-
-          // Handle for loop: for x in iterable:
-          if (converted.startsWith('for ') && converted.endsWith(':')) {
-            const matchFor = converted.match(/^for\s+([a-zA-Z0-9_,\s]+)\s+in\s+(.+):$/);
-            if (matchFor) {
-              const varName = matchFor[1].trim();
-              const iterable = matchFor[2].trim();
-              jsLines.push(`for (let ${varName} of ${iterable}) {`);
-              indentStack.push(indent + 4);
-              return;
-            }
-          }
-
-          // Handle while loop
-          if (converted.startsWith('while ') && converted.endsWith(':')) {
-            const cond = converted.slice(6, -1).trim();
-            jsLines.push(`while (${cond}) {`);
-            indentStack.push(indent + 4);
-            return;
-          }
-
-          // Multiple assignments: a, b = 1, 2
-          const multiAssign = converted.match(/^([a-zA-Z0-9_]+)\s*,\s*([a-zA-Z0-9_]+)(?:\s*,\s*([a-zA-Z0-9_]+))?\s*=\s*(.+)$/);
-          if (multiAssign && !converted.startsWith('if') && !converted.startsWith('return')) {
-            const targets = [multiAssign[1], multiAssign[2], multiAssign[3]].filter(Boolean);
-            const values = multiAssign[4];
-            jsLines.push(`let [${targets.join(', ')}] = [${values}];`);
-            return;
-          }
-
-          // Variable assignment or declaration
-          if (/^[a-zA-Z_][a-zA-Z0-9_]*\s*=[^=]/.test(converted)) {
-            const varName = converted.split('=')[0].trim();
-            jsLines.push(`var ${converted};`);
-            return;
-          }
-
-          jsLines.push(`${converted};`);
-        });
-
-        // Close remaining open blocks
-        while (indentStack.length > 1) {
-          indentStack.pop();
-          jsLines.push('}');
-        }
-
-        const compiledJS = jsLines.join('\n');
-
-        // Create execution sandbox
-        const runFn = new Function(
-          'print', 'math', 'range', 'len', 'sum', 'min', 'max', 'abs', 'round',
-          `"use strict";\n${compiledJS}`
-        );
-
-        runFn(customPrint, mathModule, pyRange, pyLen, pySum, pyMin, pyMax, pyAbs, pyRound);
-
-        const elapsed = (performance.now() - startTime).toFixed(1);
-        const finalOutput = outputLines.length > 0 
-          ? outputLines.join('\n') 
-          : '(Программа выполнена без вывода)';
-        
-        onUpdate({ 
-          output: `✓ Выполнено за ${elapsed}мс\n${finalOutput}` 
-        });
-      } catch (err: any) {
-        onUpdate({ 
-          output: `❌ Ошибка выполнения:\n${err.message || String(err)}` 
-        });
-      } finally {
-        setIsRunning(false);
-      }
-    }, 50);
+    setStatusMessage('Запуск...');
+    try {
+      const res = await executePythonCode(block.code, (msg) => {
+        setStatusMessage(msg);
+      });
+      onUpdate({ output: res.output });
+    } catch (err: any) {
+      onUpdate({ 
+        output: `❌ Ошибка выполнения:\n${err.message || String(err)}` 
+      });
+    } finally {
+      setIsRunning(false);
+      setStatusMessage(null);
+    }
   };
 
   // Syntax highlighting parser
@@ -721,23 +545,24 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
   // Resizing horizontally or vertically smoothly adjusts font size proportionally
   const widthRatio = currentWidth / baseWidth;
   const heightRatio = currentHeight / baseHeight;
-  const dimensionRatio = widthRatio * 0.65 + heightRatio * 0.35;
+  const dimensionRatio = Math.max(0.75, Math.min(1.5, widthRatio * 0.65 + heightRatio * 0.35));
 
-  // Synchronize text size with code block window size and zoom level
-  const dynamicScale = Math.max(0.6, Math.min(3.5, dimensionRatio * scale));
+  // The whiteboard zoom is handled natively via CSS transform scale(scale),
+  // so dynamicScale only handles manual resizing of the block window
+  const dynamicScale = dimensionRatio;
 
   // Typography & layout metrics synchronized with window dimensions
   const codeFontSize = Math.round(13 * dynamicScale);
   const codeLineHeight = Math.round(20 * dynamicScale);
-  const gutterWidth = Math.max(28, Math.round(42 * dynamicScale));
+  const gutterWidth = Math.max(32, Math.round(44 * dynamicScale));
   const gutterPadRight = Math.max(4, Math.round(8 * dynamicScale));
-  const lineNumberFontSize = Math.max(8, Math.round(11 * dynamicScale));
-  const editorPadding = Math.max(6, Math.round(12 * dynamicScale));
+  const lineNumberFontSize = Math.max(9, Math.round(11 * dynamicScale));
+  const editorPadding = Math.max(8, Math.round(12 * dynamicScale));
 
-  const headerTitleFontSize = Math.max(10, Math.min(18, Math.round(12 * dynamicScale)));
-  const outputFontSize = Math.max(9, Math.min(18, Math.round(11.5 * dynamicScale)));
+  const headerTitleFontSize = Math.max(11, Math.min(16, Math.round(12 * dynamicScale)));
+  const outputFontSize = Math.max(10, Math.min(16, Math.round(11.5 * dynamicScale)));
   const outputLineHeight = Math.round(16 * dynamicScale);
-  const footerFontSize = Math.max(8, Math.min(14, Math.round(10 * dynamicScale)));
+  const footerFontSize = Math.max(9, Math.min(13, Math.round(10 * dynamicScale)));
 
   return (
     <div
@@ -752,13 +577,13 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
           : 'bg-white border-slate-300 text-slate-900 shadow-slate-300/50'
       } ${isActive ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
       style={{
-        transform: `translate3d(${screenPos.x}px, ${screenPos.y}px, 0)`,
+        position: 'absolute',
+        transform: `translate3d(${screenPos.x}px, ${screenPos.y}px, 0) scale(${scale})`,
+        transformOrigin: '0 0',
         left: 0,
         top: 0,
-        width: `${block.width * scale}px`,
-        height: isMinimized ? 'auto' : (block.height ? `${block.height * scale}px` : 'auto'),
-        minWidth: '240px',
-        maxWidth: '90vw',
+        width: `${block.width}px`,
+        height: isMinimized ? 'auto' : `${block.height || baseHeight}px`,
         zIndex: isActive ? 25 : 15,
         willChange: 'transform'
       }}
@@ -864,7 +689,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
             title="Запустить код (Ctrl+Enter)"
           >
             <Play className={`w-3 h-3 fill-current ${isRunning ? 'animate-spin' : ''}`} />
-            <span>{isRunning ? '...' : 'Запуск'}</span>
+            <span>{isRunning ? (statusMessage || '...') : 'Запуск'}</span>
           </button>
 
           {/* Minimize toggle */}

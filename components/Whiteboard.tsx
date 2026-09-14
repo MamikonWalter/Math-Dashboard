@@ -1846,12 +1846,11 @@ print(f"solve({val}) =", solve(val))
       {/* Code Blocks Overlays */}
       {codeBlocks.map((block) => {
         const screenPos = worldToScreen(block.x, block.y);
-        const effectiveScale = Math.max(0.7, Math.min(scaleRef.current, 1.4));
         return (
           <PythonCodeBlock
             key={block.id}
             block={block}
-            scale={effectiveScale}
+            scale={scaleRef.current}
             screenPos={screenPos}
             isDarkMode={isDarkMode}
             isActive={activeCodeBlockId === block.id}
