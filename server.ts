@@ -256,9 +256,40 @@ async function startServer() {
     }
   });
 
-  // WebSocket Server
-  const wss = new WebSocketServer({ server });
+  // WebSocket Server with explicit upgrade routing for /ws, /api/ws, and /
+  const wss = new WebSocketServer({ noServer: true });
   const clients = new Map<WebSocket, ClientMeta>();
+
+  server.on('upgrade', (request, socket, head) => {
+    try {
+      const host = request.headers.host || 'localhost';
+      const parsedUrl = new URL(request.url || '/', `http://${host}`);
+      const pathname = parsedUrl.pathname;
+
+      if (pathname === '/ws' || pathname === '/api/ws' || pathname === '/' || pathname.startsWith('/ws/')) {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+          wss.emit('connection', ws, request);
+        });
+      } else {
+        socket.destroy();
+      }
+    } catch (err) {
+      socket.destroy();
+    }
+  });
+
+  // Heartbeat keep-alive every 20s to prevent Cloud Run proxy disconnects
+  const heartbeatInterval = setInterval(() => {
+    wss.clients.forEach((ws: any) => {
+      if (ws.isAlive === false) {
+        return ws.terminate();
+      }
+      ws.isAlive = false;
+      try {
+        ws.ping();
+      } catch (_) {}
+    });
+  }, 20000);
 
   const AVATAR_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316'];
 
@@ -327,6 +358,18 @@ async function startServer() {
               scheduleSave();
             }
 
+            // If the room on the server is currently empty (e.g. server restarted or room is fresh),
+            // and the client joined with existing strokes/codeBlocks from Firestore/localStorage,
+            // populate the server room state!
+            if (room.strokes.length === 0 && Array.isArray(msg.strokes) && msg.strokes.length > 0) {
+              room.strokes = msg.strokes;
+              if (Array.isArray(msg.codeBlocks) && msg.codeBlocks.length > 0) {
+                room.codeBlocks = msg.codeBlocks;
+              }
+              room.updatedAt = Date.now();
+              scheduleSave();
+            }
+
             meta.roomId = rawRoomId;
             if (msg.userName) meta.userName = String(msg.userName).slice(0, 30);
             if (msg.userId) meta.userId = String(msg.userId);
@@ -348,7 +391,13 @@ async function startServer() {
             break;
           }
 
-          case 'stroke_add': {
+          case 'ping': {
+            ws.send(JSON.stringify({ type: 'pong' }));
+            break;
+          }
+
+          case 'stroke_add':
+          case 'stroke_added': {
             if (!meta.roomId) return;
             const room = rooms.get(meta.roomId);
             if (!room || !msg.stroke) return;
@@ -357,7 +406,7 @@ async function startServer() {
             room.updatedAt = Date.now();
             scheduleSave();
 
-            // Broadcast to other peers in the room
+            // Broadcast to other peers in the room immediately
             broadcastToRoom(meta.roomId, {
               type: 'stroke_added',
               stroke: msg.stroke,
@@ -366,7 +415,29 @@ async function startServer() {
             break;
           }
 
-          case 'strokes_update': {
+          case 'live_stroke': {
+            if (!meta.roomId || !msg.stroke) return;
+            broadcastToRoom(meta.roomId, {
+              type: 'live_stroke',
+              userId: meta.userId,
+              userName: meta.userName,
+              color: meta.color,
+              stroke: msg.stroke
+            }, ws);
+            break;
+          }
+
+          case 'live_stroke_end': {
+            if (!meta.roomId) return;
+            broadcastToRoom(meta.roomId, {
+              type: 'live_stroke_end',
+              userId: meta.userId
+            }, ws);
+            break;
+          }
+
+          case 'strokes_update':
+          case 'strokes_updated': {
             if (!meta.roomId) return;
             const room = rooms.get(meta.roomId);
             if (!room || !Array.isArray(msg.strokes)) return;
@@ -383,7 +454,8 @@ async function startServer() {
             break;
           }
 
-          case 'code_block_create': {
+          case 'code_block_create':
+          case 'code_block_created': {
             if (!meta.roomId) return;
             const room = rooms.get(meta.roomId);
             if (!room || !msg.block) return;
@@ -402,7 +474,8 @@ async function startServer() {
             break;
           }
 
-          case 'code_block_update': {
+          case 'code_block_update':
+          case 'code_block_updated': {
             if (!meta.roomId) return;
             const room = rooms.get(meta.roomId);
             if (!room || !msg.block) return;
@@ -419,7 +492,8 @@ async function startServer() {
             break;
           }
 
-          case 'code_block_delete': {
+          case 'code_block_delete':
+          case 'code_block_deleted': {
             if (!meta.roomId) return;
             const room = rooms.get(meta.roomId);
             if (!room || !msg.blockId) return;

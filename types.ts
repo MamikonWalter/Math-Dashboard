@@ -38,6 +38,7 @@ export interface CodeBlockItem {
 }
 
 export interface Stroke {
+  id?: string;
   points: Point[];
   color: string;
   width: number; // For shapes and images, this represents size/width. For text, font size.
@@ -47,6 +48,7 @@ export interface Stroke {
   text?: string;
   textWidth?: number; // Optional horizontal width for text boxes
   rotation?: number; // Rotation angle in radians
+  updatedAt?: number;
 }
 
 export interface DrawingState {
@@ -74,6 +76,8 @@ export interface WhiteboardHandle {
   loadRoomState: (strokes: Stroke[], blocks: CodeBlockItem[]) => void;
   applyRemoteStroke: (stroke: Stroke) => void;
   applyRemoteStrokes: (strokes: Stroke[]) => void;
+  applyRemoteLiveStroke: (userId: string, stroke: Stroke) => void;
+  clearRemoteLiveStroke: (userId: string) => void;
   applyRemoteCodeBlockCreate: (block: CodeBlockItem) => void;
   applyRemoteCodeBlockUpdate: (block: CodeBlockItem) => void;
   applyRemoteCodeBlockDelete: (blockId: string) => void;
@@ -84,4 +88,5 @@ export interface WhiteboardHandle {
   pasteSelection: () => void;
   getCanvasImage: () => string | null;
   addImage: (imageUrl: string, screenX: number, screenY: number) => void;
+  isInteracting: () => boolean;
 }

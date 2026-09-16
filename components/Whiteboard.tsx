@@ -19,6 +19,8 @@ interface WhiteboardProps {
   onZoomChange?: (zoom: number) => void;
   onShapeSelect?: (size: number | null) => void;
   onStrokeAdded?: (stroke: Stroke) => void;
+  onLiveStroke?: (stroke: Stroke) => void;
+  onLiveStrokeEnd?: () => void;
   onStrokesChanged?: (strokes: Stroke[]) => void;
   onCodeBlockCreated?: (block: CodeBlockItem) => void;
   onCodeBlockUpdated?: (block: CodeBlockItem) => void;
@@ -51,6 +53,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   onZoomChange,
   onShapeSelect,
   onStrokeAdded,
+  onLiveStroke,
+  onLiveStrokeEnd,
   onStrokesChanged,
   onCodeBlockCreated,
   onCodeBlockUpdated,
@@ -61,6 +65,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+  const remoteLiveStrokesRef = useRef<Map<string, Stroke>>(new Map());
   
   // State Refs
   const strokesRef = useRef<Stroke[]>([]);
@@ -695,6 +700,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     ctx.restore();
   };
 
+  const deepCloneStrokes = (strokes: Stroke[]): Stroke[] => {
+    return strokes.map(s => ({
+      ...s,
+      points: s.points.map(p => ({ x: p.x, y: p.y }))
+    }));
+  };
+
   // --- Imperative Handle ---
   useImperativeHandle(ref, () => ({
     getSnapshot: (): WhiteboardData => {
@@ -719,7 +731,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                 imageCache.current[s.imageUrl] = img;
             }
         });
-        historyRef.current = [{ strokes: data.strokes, codeBlocks: blocks }];
+        historyRef.current = [{
+          strokes: deepCloneStrokes(data.strokes),
+          codeBlocks: JSON.parse(JSON.stringify(blocks))
+        }];
         historyStepRef.current = 0;
         selectedIndicesRef.current.clear();
         onHistoryChange(false, false);
@@ -727,8 +742,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       }
     },
     loadRoomState: (strokes: Stroke[], blocks: CodeBlockItem[]) => {
-      strokesRef.current = Array.isArray(strokes) ? strokes : [];
+      // Never wipe or clobber if user is actively in the middle of a gesture
+      if (isDrawingRef.current || isDraggingSelectionRef.current || isPanningRef.current || !!isRotatingRef.current || !!isResizingShapeRef.current || isSelectingRef.current) {
+        return;
+      }
+      remoteLiveStrokesRef.current.clear();
+      const nextStrokes = (Array.isArray(strokes) ? strokes : []).map(s => ({
+        ...s,
+        id: s.id || `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        updatedAt: s.updatedAt || Date.now()
+      }));
+      strokesRef.current = nextStrokes;
       const codeBlocksList = Array.isArray(blocks) ? blocks : [];
+      codeBlocksRef.current = codeBlocksList;
       setCodeBlocks(codeBlocksList);
       strokesRef.current.forEach(s => {
         if (s.tool === 'image' && s.imageUrl && !imageCache.current[s.imageUrl]) {
@@ -738,14 +764,23 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           imageCache.current[s.imageUrl] = img;
         }
       });
-      historyRef.current = [{ strokes: strokesRef.current, codeBlocks: codeBlocksList }];
+      historyRef.current = [{
+        strokes: deepCloneStrokes(strokesRef.current),
+        codeBlocks: JSON.parse(JSON.stringify(codeBlocksList))
+      }];
       historyStepRef.current = 0;
       selectedIndicesRef.current.clear();
       onHistoryChange(false, false);
       render();
     },
     applyRemoteStroke: (stroke: Stroke) => {
-      strokesRef.current = [...strokesRef.current, stroke];
+      remoteLiveStrokesRef.current.clear();
+      // Ensure stroke has an ID and avoid duplicate
+      const sId = stroke.id || `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const newStroke = { ...stroke, id: sId, updatedAt: stroke.updatedAt || Date.now() };
+      if (!strokesRef.current.some(s => s.id && s.id === sId)) {
+        strokesRef.current = [...strokesRef.current, newStroke];
+      }
       if (stroke.tool === 'image' && stroke.imageUrl && !imageCache.current[stroke.imageUrl]) {
         const img = new Image();
         img.src = stroke.imageUrl;
@@ -755,7 +790,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       render();
     },
     applyRemoteStrokes: (strokes: Stroke[]) => {
-      strokesRef.current = Array.isArray(strokes) ? strokes : [];
+      // If user is currently dragging or drawing, do not disrupt active gesture
+      if (isDrawingRef.current || isDraggingSelectionRef.current || !!isRotatingRef.current || !!isResizingShapeRef.current) {
+        return;
+      }
+      remoteLiveStrokesRef.current.clear();
+      strokesRef.current = (Array.isArray(strokes) ? strokes : []).map(s => ({
+        ...s,
+        id: s.id || `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        updatedAt: s.updatedAt || Date.now()
+      }));
       strokesRef.current.forEach(s => {
         if (s.tool === 'image' && s.imageUrl && !imageCache.current[s.imageUrl]) {
           const img = new Image();
@@ -766,17 +810,40 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       });
       render();
     },
+    applyRemoteLiveStroke: (userId: string, stroke: Stroke) => {
+      remoteLiveStrokesRef.current.set(userId, stroke);
+      render();
+    },
+    clearRemoteLiveStroke: (userId: string) => {
+      if (remoteLiveStrokesRef.current.has(userId)) {
+        remoteLiveStrokesRef.current.delete(userId);
+        render();
+      }
+    },
     applyRemoteCodeBlockCreate: (block: CodeBlockItem) => {
-      setCodeBlocks(prev => [...prev.filter(b => b.id !== block.id), block]);
+      setCodeBlocks(prev => {
+        const next = [...prev.filter(b => b.id !== block.id), block];
+        codeBlocksRef.current = next;
+        return next;
+      });
     },
     applyRemoteCodeBlockUpdate: (block: CodeBlockItem) => {
-      setCodeBlocks(prev => prev.map(b => b.id === block.id ? { ...b, ...block } : b));
+      setCodeBlocks(prev => {
+        const next = prev.map(b => b.id === block.id ? { ...b, ...block } : b);
+        codeBlocksRef.current = next;
+        return next;
+      });
     },
     applyRemoteCodeBlockDelete: (blockId: string) => {
-      setCodeBlocks(prev => prev.filter(b => b.id !== blockId));
+      setCodeBlocks(prev => {
+        const next = prev.filter(b => b.id !== blockId);
+        codeBlocksRef.current = next;
+        return next;
+      });
     },
     clearBoard: () => {
       strokesRef.current = [];
+      codeBlocksRef.current = [];
       setCodeBlocks([]);
       selectedIndicesRef.current.clear();
       historyRef.current = [{ strokes: [], codeBlocks: [] }];
@@ -803,10 +870,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     deleteSelection: () => {
         let changed = false;
         if (activeCodeBlockIdRef.current) {
-            const nextBlocks = codeBlocksRef.current.filter(b => b.id !== activeCodeBlockIdRef.current);
+            const deletedId = activeCodeBlockIdRef.current;
+            const nextBlocks = codeBlocksRef.current.filter(b => b.id !== deletedId);
+            codeBlocksRef.current = nextBlocks;
             setCodeBlocks(nextBlocks);
             activeCodeBlockIdRef.current = null;
             setActiveCodeBlockId(null);
+            if (onCodeBlockDeleted) onCodeBlockDeleted(deletedId);
             changed = true;
         }
         if (selectedIndicesRef.current.size > 0) {
@@ -931,6 +1001,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             pushHistory();
             render();
         };
+    },
+    isInteracting: () => {
+      return isDrawingRef.current || 
+             isDraggingSelectionRef.current || 
+             isPanningRef.current || 
+             !!isRotatingRef.current || 
+             !!isResizingShapeRef.current || 
+             isSelectingRef.current || 
+             !!isResizingTextRef.current;
     }
   }));
 
@@ -1083,6 +1162,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         ctx.strokeRect(x, y, w, h);
         ctx.restore();
     }
+    // Draw in-progress remote live strokes from other participants in real time
+    remoteLiveStrokesRef.current.forEach((remoteStroke) => {
+      drawStrokeOnCtx(ctx, remoteStroke);
+    });
+
     if (currentStrokeRef.current) drawStrokeOnCtx(ctx, currentStrokeRef.current);
   }, [showGrid, isDarkMode]);
 
@@ -1095,19 +1179,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const handleFinishText = useCallback(() => {
       if (activeTextInput && activeTextInput.value.trim().length > 0) {
           const newStroke: Stroke = {
+              id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
               tool: 'text',
               points: [{ x: activeTextInput.x, y: activeTextInput.y }],
               color: activeTextInput.color,
               width: activeTextInput.fontSize,
               text: activeTextInput.value,
-              textWidth: activeTextInput.width > 50 ? activeTextInput.width : undefined
+              textWidth: activeTextInput.width > 50 ? activeTextInput.width : undefined,
+              updatedAt: Date.now()
           };
           strokesRef.current = [...strokesRef.current, newStroke];
+          if (onStrokeAdded) onStrokeAdded(newStroke);
           pushHistory();
           render();
       }
       setActiveTextInput(null);
-  }, [activeTextInput, render]);
+  }, [activeTextInput, onStrokeAdded, render]);
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     const coords = getCoords(e);
@@ -1140,11 +1227,10 @@ print(f"solve({val}) =", solve(val))
             output: undefined,
             isMinimized: false
         };
-        setCodeBlocks(prev => {
-            const next = [...prev, newBlock];
-            pushHistory(strokesRef.current, next);
-            return next;
-        });
+        const next = [...codeBlocksRef.current.filter(b => b.id !== newBlock.id), newBlock];
+        codeBlocksRef.current = next;
+        setCodeBlocks(next);
+        pushHistory(strokesRef.current, next);
         setActiveCodeBlockId(newBlock.id);
         if (onCodeBlockCreated) onCodeBlockCreated(newBlock);
         return;
@@ -1302,12 +1388,18 @@ print(f"solve({val}) =", solve(val))
     if (shapeTools.includes(tool)) {
         onDrawStart(); 
         const shapeStroke: Stroke = {
-            points: [worldPos], color, width: shapeSize * PIXELS_PER_PERCENT, tool
+            id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            points: [worldPos],
+            color,
+            width: shapeSize * PIXELS_PER_PERCENT,
+            tool,
+            updatedAt: Date.now()
         };
         strokesRef.current = [...strokesRef.current, shapeStroke];
         selectedIndicesRef.current.clear();
         selectedIndicesRef.current.add(strokesRef.current.length - 1);
         if (onShapeSelect) onShapeSelect(shapeSize);
+        if (onStrokeAdded) onStrokeAdded(shapeStroke);
         pushHistory();
         render();
         return; 
@@ -1317,7 +1409,14 @@ print(f"solve({val}) =", solve(val))
     onDrawStart();
     selectedIndicesRef.current.clear();
     const initialPoints = tool === 'dotted-line' ? [worldPos, worldPos] : [worldPos];
-    currentStrokeRef.current = { points: initialPoints, color, width: strokeWidth, tool };
+    currentStrokeRef.current = {
+      id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      points: initialPoints,
+      color,
+      width: strokeWidth,
+      tool,
+      updatedAt: Date.now()
+    };
     render();
   };
 
@@ -1448,6 +1547,9 @@ print(f"solve({val}) =", solve(val))
              currentStrokeRef.current.points = [startPos, targetPos];
         } else currentStrokeRef.current.points.push(worldPos);
         render();
+        if (onLiveStroke) {
+          onLiveStroke(currentStrokeRef.current);
+        }
     }
 
     // Hover cursor feedback in cursor mode when not interacting
@@ -1498,12 +1600,20 @@ print(f"solve({val}) =", solve(val))
   const endDrawing = () => {
     if (isPanningRef.current) { isPanningRef.current = false; return; }
     if (isRotatingRef.current) {
+        const { strokeIndex } = isRotatingRef.current;
+        if (strokesRef.current[strokeIndex]) {
+          strokesRef.current[strokeIndex].updatedAt = Date.now();
+        }
         isRotatingRef.current = null;
         pushHistory();
         render();
         return;
     }
     if (isResizingShapeRef.current) {
+        const { strokeIndex } = isResizingShapeRef.current;
+        if (strokesRef.current[strokeIndex]) {
+          strokesRef.current[strokeIndex].updatedAt = Date.now();
+        }
         isResizingShapeRef.current = null;
         pushHistory();
         render();
@@ -1526,14 +1636,29 @@ print(f"solve({val}) =", solve(val))
         render(); return;
     }
     if (tool === 'cursor' && isDraggingSelectionRef.current) {
-        isDraggingSelectionRef.current = false; isDrawingRef.current = false;
-        pushHistory(); return;
+        isDraggingSelectionRef.current = false;
+        isDrawingRef.current = false;
+        selectedIndicesRef.current.forEach((idx: number) => {
+            const stroke = strokesRef.current[idx];
+            if (stroke) stroke.updatedAt = Date.now();
+        });
+        pushHistory();
+        render();
+        return;
     }
     if (isDrawingRef.current && currentStrokeRef.current) {
         isDrawingRef.current = false;
-        strokesRef.current = [...strokesRef.current, currentStrokeRef.current];
+        const finishedStroke: Stroke = {
+          ...currentStrokeRef.current,
+          id: currentStrokeRef.current.id || `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          updatedAt: Date.now()
+        };
+        strokesRef.current = [...strokesRef.current, finishedStroke];
         currentStrokeRef.current = null;
-        pushHistory(); render();
+        if (onLiveStrokeEnd) onLiveStrokeEnd();
+        if (onStrokeAdded) onStrokeAdded(finishedStroke);
+        pushHistory(); 
+        render();
     }
   };
 
@@ -1644,7 +1769,7 @@ print(f"solve({val}) =", solve(val))
   const pushHistory = (newStrokes: Stroke[] = strokesRef.current, newBlocks: CodeBlockItem[] = codeBlocksRef.current, syncRemote: boolean = true) => {
       const newHistory = historyRef.current.slice(0, historyStepRef.current + 1);
       newHistory.push({
-          strokes: [...newStrokes],
+          strokes: deepCloneStrokes(newStrokes),
           codeBlocks: JSON.parse(JSON.stringify(newBlocks))
       });
       historyRef.current = newHistory; 
@@ -1887,6 +2012,7 @@ print(f"solve({val}) =", solve(val))
               const fullUpdated = { ...block, ...updated };
               setCodeBlocks(prev => {
                 const next = prev.map(b => b.id === block.id ? fullUpdated : b);
+                codeBlocksRef.current = next;
                 return next;
               });
               if (onCodeBlockUpdated) onCodeBlockUpdated(fullUpdated);
@@ -1894,6 +2020,7 @@ print(f"solve({val}) =", solve(val))
             onDelete={() => {
               setCodeBlocks(prev => {
                 const next = prev.filter(b => b.id !== block.id);
+                codeBlocksRef.current = next;
                 pushHistory(strokesRef.current, next);
                 return next;
               });

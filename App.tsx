@@ -102,14 +102,17 @@ const App: React.FC = () => {
   const [isServerAvailable, setIsServerAvailable] = useState<boolean | null>(null);
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'saving' | 'offline'>('synced');
+  const lastLocalEditTimeRef = useRef<number>(Date.now());
 
   // Unified persistent saving to Firestore and LocalStorage
   const persistBoardChanges = useCallback((overrideStrokes?: any[], overrideBlocks?: any[]) => {
     if (!currentRoomId) return;
+    lastLocalEditTimeRef.current = Date.now();
     const snapshot = whiteboardRef.current?.getSnapshot();
-    const strokes = overrideStrokes || snapshot?.strokes || [];
-    const codeBlocks = overrideBlocks || snapshot?.codeBlocks || [];
+    const strokes = overrideStrokes !== undefined ? overrideStrokes : (snapshot?.strokes || []);
+    const codeBlocks = overrideBlocks !== undefined ? overrideBlocks : (snapshot?.codeBlocks || []);
 
+    collab.setLocalState(strokes, codeBlocks);
     setCloudSyncStatus('saving');
     saveBoardHybrid(currentRoomId, strokes, codeBlocks);
     setTimeout(() => setCloudSyncStatus('synced'), 1000);
@@ -258,18 +261,32 @@ const App: React.FC = () => {
     if (!currentRoomId) return;
 
     const unsubscribe = subscribeToBoardCloud(currentRoomId, (cloudBoard) => {
-      // If cloud was updated from another device, reflect strokes and blocks
-      const snapshot = whiteboardRef.current?.getSnapshot();
-      if (snapshot && cloudBoard.updatedAt > 0) {
-        const localStrokesCount = snapshot.strokes.length;
-        const localBlocksCount = (snapshot.codeBlocks || []).length;
-        const cloudStrokesCount = cloudBoard.strokes.length;
-        const cloudBlocksCount = cloudBoard.codeBlocks.length;
+      // Ignore if this is an echo of local pending writes to avoid race conditions
+      if (cloudBoard.hasPendingWrites) return;
 
-        // If another device added items or modified the board
-        if (cloudStrokesCount !== localStrokesCount || cloudBlocksCount !== localBlocksCount) {
-          whiteboardRef.current?.loadRoomState(cloudBoard.strokes, cloudBoard.codeBlocks);
-        }
+      // Ignore stale updates if local changes occurred after or at the same time as cloud timestamp
+      if (cloudBoard.updatedAt <= lastLocalEditTimeRef.current) return;
+
+      // Do not interrupt user if they are currently drawing or dragging on canvas
+      if (whiteboardRef.current?.isInteracting()) return;
+
+      const snapshot = whiteboardRef.current?.getSnapshot();
+      if (!snapshot || cloudBoard.updatedAt <= 0) return;
+
+      const localStrokesCount = snapshot.strokes.length;
+      const localBlocksCount = (snapshot.codeBlocks || []).length;
+      const cloudStrokesCount = cloudBoard.strokes.length;
+      const cloudBlocksCount = cloudBoard.codeBlocks.length;
+
+      // Guard against race condition: if local device has content, don't let empty cloud state wipe it
+      if (cloudStrokesCount === 0 && localStrokesCount > 0) return;
+      if (cloudBlocksCount === 0 && localBlocksCount > 0) return;
+
+      // If another device added items or modified the board
+      if (cloudStrokesCount !== localStrokesCount || cloudBlocksCount !== localBlocksCount || cloudBoard.updatedAt > lastLocalEditTimeRef.current) {
+        lastLocalEditTimeRef.current = cloudBoard.updatedAt;
+        whiteboardRef.current?.loadRoomState(cloudBoard.strokes, cloudBoard.codeBlocks);
+        collab.setLocalState(cloudBoard.strokes, cloudBoard.codeBlocks);
       }
     });
 
@@ -286,8 +303,19 @@ const App: React.FC = () => {
           const incomingStrokes = Array.isArray(event.data.strokes) ? event.data.strokes : [];
           const incomingBlocks = Array.isArray(event.data.codeBlocks) ? event.data.codeBlocks : [];
 
-          // Always set room state directly from room authority (server / peer)
-          whiteboardRef.current?.loadRoomState(incomingStrokes, incomingBlocks);
+          const snapshot = whiteboardRef.current?.getSnapshot();
+          const localHasItems = snapshot && (snapshot.strokes.length > 0 || (snapshot.codeBlocks || []).length > 0);
+
+          if (incomingStrokes.length > 0 || incomingBlocks.length > 0) {
+            if (!localHasItems || !whiteboardRef.current?.isInteracting()) {
+              whiteboardRef.current?.loadRoomState(incomingStrokes, incomingBlocks);
+              collab.setLocalState(incomingStrokes, incomingBlocks);
+            }
+          } else if (localHasItems && snapshot) {
+            // Room is empty on server, push our local state to it
+            collab.sendStrokesUpdate(snapshot.strokes);
+            (snapshot.codeBlocks || []).forEach(b => collab.sendCodeBlockCreate(b));
+          }
           setUserCount(event.data.usersCount || 1);
           break;
         }
@@ -295,8 +323,22 @@ const App: React.FC = () => {
           whiteboardRef.current?.applyRemoteStroke(event.data);
           break;
         }
+        case 'live_stroke': {
+          if (event.data?.userId && event.data?.stroke) {
+            whiteboardRef.current?.applyRemoteLiveStroke(event.data.userId, event.data.stroke);
+          }
+          break;
+        }
+        case 'live_stroke_end': {
+          if (event.data?.userId) {
+            whiteboardRef.current?.clearRemoteLiveStroke(event.data.userId);
+          }
+          break;
+        }
         case 'strokes_updated': {
-          whiteboardRef.current?.applyRemoteStrokes(event.data);
+          if (!whiteboardRef.current?.isInteracting()) {
+            whiteboardRef.current?.applyRemoteStrokes(event.data);
+          }
           break;
         }
         case 'code_block_created': {
@@ -814,21 +856,40 @@ const App: React.FC = () => {
         onDrawStart={handleDrawStart} 
         onZoomChange={setZoom} 
         onShapeSelect={handleShapeSelect}
+        onStrokeAdded={(stroke) => {
+          lastLocalEditTimeRef.current = Date.now();
+          collab.sendStroke(stroke);
+          persistBoardChanges();
+        }}
+        onLiveStroke={(stroke) => {
+          collab.sendLiveStroke(stroke);
+        }}
+        onLiveStrokeEnd={() => {
+          collab.sendLiveStrokeEnd();
+        }}
         onStrokesChanged={(strokes) => {
+          lastLocalEditTimeRef.current = Date.now();
+          collab.setLocalState(strokes);
           collab.sendStrokesUpdate(strokes);
           persistBoardChanges(strokes);
         }}
         onCodeBlockCreated={(block) => {
           collab.sendCodeBlockCreate(block);
-          persistBoardChanges();
+          const currentBlocks = whiteboardRef.current?.getSnapshot()?.codeBlocks || [];
+          const updatedBlocks = [...currentBlocks.filter(b => b.id !== block.id), block];
+          persistBoardChanges(undefined, updatedBlocks);
         }}
         onCodeBlockUpdated={(block) => {
           collab.sendCodeBlockUpdate(block);
-          persistBoardChanges();
+          const currentBlocks = whiteboardRef.current?.getSnapshot()?.codeBlocks || [];
+          const updatedBlocks = currentBlocks.map(b => b.id === block.id ? { ...b, ...block } : b);
+          persistBoardChanges(undefined, updatedBlocks);
         }}
         onCodeBlockDeleted={(blockId) => {
           collab.sendCodeBlockDelete(blockId);
-          persistBoardChanges();
+          const currentBlocks = whiteboardRef.current?.getSnapshot()?.codeBlocks || [];
+          const updatedBlocks = currentBlocks.filter(b => b.id !== blockId);
+          persistBoardChanges(undefined, updatedBlocks);
         }}
         onCursorMove={(x, y) => collab.sendCursor(x, y)}
         remoteCursors={remoteCursors}

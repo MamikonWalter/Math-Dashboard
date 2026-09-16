@@ -11,7 +11,7 @@ export interface RemoteCursor {
 }
 
 export type CollabEventCallback = (event: {
-  type: 'init' | 'stroke_added' | 'strokes_updated' | 'code_block_created' | 'code_block_updated' | 'code_block_deleted' | 'users_count' | 'cursors_updated' | 'connection_status';
+  type: 'init' | 'stroke_added' | 'strokes_updated' | 'live_stroke' | 'live_stroke_end' | 'code_block_created' | 'code_block_updated' | 'code_block_deleted' | 'users_count' | 'cursors_updated' | 'connection_status';
   data: any;
 }) => void;
 
@@ -25,6 +25,7 @@ class CollaborationService {
 
   private ws: WebSocket | null = null;
   private bc: BroadcastChannel | null = null;
+  private pingTimer: any = null;
 
   private currentRoomId: string | null = null;
   private userId: string = 'u_' + Math.random().toString(36).substring(2, 9);
@@ -35,10 +36,11 @@ class CollaborationService {
   private remoteCursors: Map<string, RemoteCursor> = new Map();
   private reconnectTimer: any = null;
   private retryAttempts: number = 0;
-  private maxRetryAttempts: number = 3;
+  private maxRetryAttempts: number = 5;
   private isConnected: boolean = false;
   private userCount: number = 1;
   private lastCursorSend: number = 0;
+  private lastLiveStrokeSend: number = 0;
 
   // In-memory cache of current room strokes and blocks for instant syncing and local persistence
   private currentStrokes: Stroke[] = [];
@@ -79,25 +81,29 @@ class CollaborationService {
   private saveToLocalStorage() {
     if (!this.currentRoomId) return;
     try {
-      localStorage.setItem(`mathters_room_${this.currentRoomId}`, JSON.stringify({
+      const data = JSON.stringify({
         strokes: this.currentStrokes,
         codeBlocks: this.currentBlocks,
         updatedAt: Date.now()
-      }));
+      });
+      localStorage.setItem(`mathters_room_${this.currentRoomId}`, data);
+      localStorage.setItem(`mathters_board_${this.currentRoomId}`, data);
     } catch (_) {}
+  }
+
+  public setLocalState(strokes: Stroke[], blocks?: CodeBlockItem[]) {
+    if (Array.isArray(strokes)) this.currentStrokes = strokes;
+    if (Array.isArray(blocks)) this.currentBlocks = blocks;
+    this.saveToLocalStorage();
   }
 
   public connect(roomId: string, userName?: string) {
     this.currentRoomId = roomId.toUpperCase();
     if (userName) this.userName = userName;
 
-    // CRITICAL: Always reset in-memory room strokes & blocks so previous room's data NEVER bleeds into this room
-    this.currentStrokes = [];
-    this.currentBlocks = [];
-
-    // 1. Load any existing local data for this room first as fallback
+    // Load any existing local data for this room first as fallback
     try {
-      const saved = localStorage.getItem(`mathters_room_${this.currentRoomId}`);
+      const saved = localStorage.getItem(`mathters_board_${this.currentRoomId}`) || localStorage.getItem(`mathters_room_${this.currentRoomId}`);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed.strokes)) this.currentStrokes = parsed.strokes;
@@ -238,13 +244,15 @@ class CollaborationService {
     conn.on('open', () => {
       this.updateP2PUserCount();
 
-      // Send the current whiteboard state (all strokes and Python code blocks) to newly joined device
-      conn.send({
-        type: 'room_state',
-        strokes: this.currentStrokes,
-        codeBlocks: this.currentBlocks,
-        usersCount: this.peerConnections.size + 1
-      });
+      // Send the current whiteboard state ONLY if we actually have items to share
+      if (this.currentStrokes.length > 0 || this.currentBlocks.length > 0) {
+        conn.send({
+          type: 'room_state',
+          strokes: this.currentStrokes,
+          codeBlocks: this.currentBlocks,
+          usersCount: this.peerConnections.size + 1
+        });
+      }
     });
 
     conn.on('data', (data: any) => {
@@ -318,7 +326,7 @@ class CollaborationService {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
 
     try {
       this.ws = new WebSocket(wsUrl);
@@ -331,8 +339,20 @@ class CollaborationService {
           type: 'join_room',
           roomId: this.currentRoomId,
           userId: this.userId,
-          userName: this.userName
+          userName: this.userName,
+          strokes: this.currentStrokes,
+          codeBlocks: this.currentBlocks
         });
+
+        // Keep connection warm through proxies with a 15-second heartbeat
+        if (this.pingTimer) clearInterval(this.pingTimer);
+        this.pingTimer = setInterval(() => {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            try {
+              this.ws.send(JSON.stringify({ type: 'ping' }));
+            } catch (_) {}
+          }
+        }, 15000);
       };
 
       this.ws.onmessage = (event) => {
@@ -346,10 +366,14 @@ class CollaborationService {
 
       this.ws.onclose = () => {
         this.isConnected = false;
+        if (this.pingTimer) {
+          clearInterval(this.pingTimer);
+          this.pingTimer = null;
+        }
         if (this.currentRoomId && this.retryAttempts < this.maxRetryAttempts) {
           this.retryAttempts++;
           clearTimeout(this.reconnectTimer);
-          const delay = Math.min(2000 * Math.pow(1.5, this.retryAttempts - 1), 6000);
+          const delay = Math.min(400 * Math.pow(1.3, this.retryAttempts - 1), 3000);
           this.reconnectTimer = setTimeout(() => {
             if (this.currentRoomId) this.initWebSocket();
           }, delay);
@@ -374,12 +398,26 @@ class CollaborationService {
 
   private handleIncomingData(msg: any) {
     if (!msg) return;
+    if (msg.senderId && msg.senderId === this.userId) return;
 
     switch (msg.type) {
       case 'room_state': {
         this.userCount = msg.usersCount || this.userCount || 1;
-        this.currentStrokes = msg.strokes || [];
-        this.currentBlocks = msg.codeBlocks || [];
+        const incomingStrokes = Array.isArray(msg.strokes) ? msg.strokes : [];
+        const incomingBlocks = Array.isArray(msg.codeBlocks) ? msg.codeBlocks : [];
+
+        // Critical safety guard: If incoming room_state is completely empty, but we already have local strokes/blocks,
+        // DO NOT wipe the board! Instead, share our current state with the room.
+        if (incomingStrokes.length === 0 && incomingBlocks.length === 0 && (this.currentStrokes.length > 0 || this.currentBlocks.length > 0)) {
+          this.sendStrokesUpdate(this.currentStrokes);
+          if (this.currentBlocks.length > 0) {
+            this.currentBlocks.forEach(b => this.sendCodeBlockCreate(b));
+          }
+          break;
+        }
+
+        this.currentStrokes = incomingStrokes;
+        this.currentBlocks = incomingBlocks;
         this.saveToLocalStorage();
         this.emit({
           type: 'init',
@@ -391,13 +429,41 @@ class CollaborationService {
         });
         break;
       }
+      case 'live_stroke': {
+        if (msg.userId !== this.userId && msg.stroke) {
+          this.emit({
+            type: 'live_stroke',
+            data: {
+              userId: msg.userId,
+              userName: msg.userName,
+              color: msg.color,
+              stroke: msg.stroke
+            }
+          });
+        }
+        break;
+      }
+      case 'live_stroke_end': {
+        if (msg.userId !== this.userId) {
+          this.emit({
+            type: 'live_stroke_end',
+            data: { userId: msg.userId }
+          });
+        }
+        break;
+      }
       case 'stroke_added': {
-        this.currentStrokes.push(msg.stroke);
-        this.saveToLocalStorage();
-        this.emit({ type: 'stroke_added', data: msg.stroke });
+        if (!msg.stroke) break;
+        const exists = msg.stroke.id && this.currentStrokes.some(s => s.id === msg.stroke.id);
+        if (!exists) {
+          this.currentStrokes.push(msg.stroke);
+          this.saveToLocalStorage();
+          this.emit({ type: 'stroke_added', data: msg.stroke });
+        }
         break;
       }
       case 'strokes_updated': {
+        if (!Array.isArray(msg.strokes)) break;
         this.currentStrokes = msg.strokes;
         this.saveToLocalStorage();
         this.emit({ type: 'strokes_updated', data: msg.strokes });
@@ -538,6 +604,31 @@ class CollaborationService {
     });
   }
 
+  public sendLiveStroke(stroke: Stroke) {
+    if (!this.currentRoomId) return;
+    const now = Date.now();
+    if (now - this.lastLiveStrokeSend < 25) return; // ~40 fps
+    this.lastLiveStrokeSend = now;
+
+    this.send({
+      type: 'live_stroke',
+      roomId: this.currentRoomId,
+      userId: this.userId,
+      userName: this.userName,
+      color: this.userColor,
+      stroke
+    });
+  }
+
+  public sendLiveStrokeEnd() {
+    if (!this.currentRoomId) return;
+    this.send({
+      type: 'live_stroke_end',
+      roomId: this.currentRoomId,
+      userId: this.userId
+    });
+  }
+
   public sendCursor(x: number, y: number) {
     if (!this.currentRoomId) return;
     const now = Date.now();
@@ -572,6 +663,10 @@ class CollaborationService {
     this.currentStrokes = [];
     this.currentBlocks = [];
     clearTimeout(this.reconnectTimer);
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
     this.cleanupPeer();
     if (this.ws) {
       try { this.ws.close(); } catch (_) {}

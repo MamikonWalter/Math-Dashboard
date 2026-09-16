@@ -51,16 +51,23 @@ export interface BoardData {
   strokes: Stroke[];
   codeBlocks: CodeBlockItem[];
   updatedAt: number;
+  hasPendingWrites?: boolean;
 }
 
 const LOCAL_STORAGE_PREFIX = 'mathters_board_';
 const LAST_ROOM_KEY = 'mathters_last_room_id';
 
 // Local storage helpers
+let lastLocalSaveTimestamps: Record<string, number> = {};
+
+export function getLastLocalSaveTime(roomId: string): number {
+  return lastLocalSaveTimestamps[roomId.trim().toUpperCase()] || 0;
+}
+
 export function getLocalBoard(roomId: string): BoardData | null {
   try {
     const cleanId = roomId.trim().toUpperCase();
-    const raw = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${cleanId}`);
+    const raw = localStorage.getItem(`${LOCAL_STORAGE_PREFIX}${cleanId}`) || localStorage.getItem(`mathters_room_${cleanId}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return {
@@ -77,13 +84,17 @@ export function getLocalBoard(roomId: string): BoardData | null {
 export function saveLocalBoard(roomId: string, strokes: Stroke[], codeBlocks: CodeBlockItem[]): void {
   try {
     const cleanId = roomId.trim().toUpperCase();
+    const now = Date.now();
+    lastLocalSaveTimestamps[cleanId] = now;
     const data: BoardData = {
       id: cleanId,
       strokes,
       codeBlocks,
-      updatedAt: Date.now()
+      updatedAt: now
     };
-    localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${cleanId}`, JSON.stringify(data));
+    const jsonStr = JSON.stringify(data);
+    localStorage.setItem(`${LOCAL_STORAGE_PREFIX}${cleanId}`, jsonStr);
+    localStorage.setItem(`mathters_room_${cleanId}`, jsonStr);
     localStorage.setItem(LAST_ROOM_KEY, cleanId);
   } catch (err) {
     console.warn('[Storage] Could not write to localStorage:', err);
@@ -142,11 +153,13 @@ export async function saveBoardHybrid(
       if (!firestore) return;
 
       const boardDocRef = doc(firestore, 'boards', cleanId);
+      const now = Date.now();
+      lastLocalSaveTimestamps[cleanId] = Math.max(lastLocalSaveTimestamps[cleanId] || 0, now);
       const payload = sanitizeForFirestore({
         id: cleanId,
         strokes,
         codeBlocks,
-        updatedAt: Date.now()
+        updatedAt: lastLocalSaveTimestamps[cleanId]
       });
 
       if (immediate && strokes.length === 0 && codeBlocks.length === 0) {
@@ -163,8 +176,8 @@ export async function saveBoardHybrid(
   if (immediate) {
     await executeFirestoreWrite();
   } else {
-    // 1000ms debounce ensures smooth drawing while persisting promptly
-    firestoreSaveTimers[cleanId] = setTimeout(executeFirestoreWrite, 1000);
+    // 150ms debounce ensures smooth drawing while persisting almost instantly
+    firestoreSaveTimers[cleanId] = setTimeout(executeFirestoreWrite, 150);
   }
 }
 
@@ -240,7 +253,8 @@ export function subscribeToBoardCloud(
             id: cleanId,
             strokes: Array.isArray(cloudData.strokes) ? cloudData.strokes : [],
             codeBlocks: Array.isArray(cloudData.codeBlocks) ? cloudData.codeBlocks : [],
-            updatedAt: cloudData.updatedAt || 0
+            updatedAt: cloudData.updatedAt || 0,
+            hasPendingWrites: snapshot.metadata.hasPendingWrites
           };
           onUpdate(boardData);
         }
