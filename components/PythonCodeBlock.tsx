@@ -1,19 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
-  Play, 
   Copy, 
   Check, 
   Trash2, 
   ChevronDown, 
   ChevronUp, 
-  Terminal, 
-  RotateCcw,
-  Sparkles,
-  GripHorizontal,
+  Maximize2,
+  Minimize2,
+  Edit2,
   FileCode2
 } from 'lucide-react';
 import { CodeBlockItem } from '../types';
-import { executePythonCode } from '../utils/pythonRunner';
 
 interface PythonCodeBlockProps {
   block: CodeBlockItem;
@@ -28,137 +25,59 @@ interface PythonCodeBlockProps {
   onFocus: () => void;
 }
 
-// Preset examples for quick math & algorithm experimentation
+// Preset Python examples for math & algorithms
 const PYTHON_PRESETS = [
   {
-    name: 'Срезы строк и списков (Slicing)',
-    code: `# Срезы строк и списков в Python
-text = "Mathters Whiteboard"
-print("Исходный текст:", text)
-print("Срез [0:8]:", text[0:8])
-print("Срез [-10:]:", text[-10:])
-print("Срез с шагом 2 [::2]:", text[::2])
-print("Разворот строки [::-1]:", text[::-1])
+    name: 'Алгоритм Евклида (НОД)',
+    code: `# Поиск наибольшего общего делителя (НОД)
+def gcd(a: int, b: int) -> int:
+    while b != 0:
+        a, b = b, a % b
+    return a
 
-numbers = list(range(1, 11))
-print("\\nСписок чисел:", numbers)
-print("Первые 5 чисел [:5]:", numbers[:5])
-print("Чётные через срез [1::2]:", numbers[1::2])
-print("Последние 3 числа [-3:]:", numbers[-3:])
-`
-  },
-  {
-    name: 'Преобразования типов и int()',
-    code: `# Использование int(), float(), str(), bin(), hex()
-val_str = "42"
-val_int = int(val_str)
-print("Строка '42' в int:", val_int, type(val_int).__name__)
-
-# Преобразование систем счисления: int(str, base)
-bin_val = "101010"
-print(f"int('{bin_val}', 2) =", int(bin_val, 2))
-hex_val = "2A"
-print(f"int('{hex_val}', 16) =", int(hex_val, 16))
-
-# Округление и float
-pi_approx = float("3.14159265")
-print(f"float: {pi_approx}, int(pi) = {int(pi_approx)}")
-print(f"bin(42) = {bin(42)}, hex(42) = {hex(42)}")
-`
-  },
-  {
-    name: 'Генераторы списков (Comprehensions)',
-    code: `# Генераторы списков (List Comprehensions) и словарей
-squares = [x**2 for x in range(1, 11)]
-print("Квадраты чисел 1..10:", squares)
-
-even_squares = [x**2 for x in range(1, 15) if x % 2 == 0]
-print("Квадраты чётных:", even_squares)
-
-# Генератор словаря кубов
-cubes_dict = {x: x**3 for x in range(1, 6)}
-print("Словарь кубов:", cubes_dict)
-
-# Таблица умножения
-matrix = [[i * j for j in range(1, 5)] for i in range(1, 5)]
-print("Матрица 4x4:")
-for row in matrix:
-    print(row)
+x, y = 1071, 462
+print(f"НОД({x}, {y}) = {gcd(x, y)}")
 `
   },
   {
     name: 'Квадратное уравнение',
-    code: `# Решение квадратного уравнения: ax² + bx + c = 0
-import math
+    code: `import math
 
-a, b, c = 1, -5, 6
-d = b**2 - 4*a*c
+def solve_quadratic(a: float, b: float, c: float):
+    d = b**2 - 4 * a * c
+    if d > 0:
+        x1 = (-b + math.sqrt(d)) / (2 * a)
+        x2 = (-b - math.sqrt(d)) / (2 * a)
+        return x1, x2
+    elif d == 0:
+        return -b / (2 * a)
+    return None
 
-print(f"Уравнение: {a}x² + ({b})x + ({c}) = 0")
-print(f"Дискриминант D = {d}")
-
-if d > 0:
-    x1 = (-b + math.sqrt(d)) / (2*a)
-    x2 = (-b - math.sqrt(d)) / (2*a)
-    print(f"Два корня: x₁ = {x1}, x₂ = {x2}")
-elif d == 0:
-    x = -b / (2*a)
-    print(f"Один корень: x = {x}")
-else:
-    print("Действительных корней нет")
+roots = solve_quadratic(1, -5, 6)
+print("Корни уравнения:", roots)
 `
   },
   {
-    name: 'Математика и статистика',
-    code: `# Модули math и statistics
-import math
-import statistics
+    name: 'Генерация списков (List Comprehension)',
+    code: `# Генераторы списков и срезы в Python
+squares = [x**2 for x in range(1, 11)]
+evens = [x for x in squares if x % 2 == 0]
 
-data = [12, 15, 23, 42, 56, 78, 92, 105, 42]
-print("Набор данных:", data)
-print("Среднее (mean):", statistics.mean(data))
-print("Медиана (median):", statistics.median(data))
-print("Мода (mode):", statistics.mode(data))
-print("Стандартное отклонение:", round(statistics.stdev(data), 3))
-print("НОД(84, 36) =", math.gcd(84, 36))
-print("Число сочетаний C(10, 3) =", math.comb(10, 3))
+matrix = [[i * j for j in range(1, 4)] for i in range(1, 4)]
+reversed_list = squares[::-1]
 `
   },
   {
-    name: 'Числа Фибоначчи',
-    code: `# Генерация первых N чисел Фибоначчи
-def fibonacci(n):
-    seq = [0, 1]
-    while len(seq) < n:
-        seq.append(seq[-1] + seq[-2])
-    return seq[:n]
+    name: 'Числа Фибоначчи с мемоизацией',
+    code: `from functools import lru_cache
 
-n = 12
-fibs = fibonacci(n)
-print(f"Первые {n} чисел Фибоначчи:")
-print(fibs)
-print(f"Сумма: {sum(fibs)}")
-`
-  },
-  {
-    name: 'Простые числа (Решето)',
-    code: `# Поиск простых чисел до N
-def find_primes(limit):
-    primes = []
-    for num in range(2, limit + 1):
-        is_prime = True
-        for i in range(2, int(num**0.5) + 1):
-            if num % i == 0:
-                is_prime = False
-                break
-        if is_prime:
-            primes.append(num)
-    return primes
+@lru_cache(maxsize=None)
+def fib(n: int) -> int:
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
 
-primes = find_primes(50)
-print("Простые числа до 50:")
-print(primes)
-print(f"Количество: {len(primes)}")
+first_10 = [fib(i) for i in range(10)]
 `
   }
 ];
@@ -176,18 +95,36 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
   onFocus
 }) => {
   const [copied, setCopied] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState(block.title || 'main.py');
   const [showPresets, setShowPresets] = useState(false);
+  const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync scroll between textarea and highlighted code overlay
+  // Sync title input with block prop
+  useEffect(() => {
+    setTitleInput(block.title || 'main.py');
+  }, [block.title]);
+
+  // Synchronize scrolling between textarea and highlighted syntax overlay
   const handleScroll = () => {
     if (textareaRef.current && preRef.current) {
       preRef.current.scrollTop = textareaRef.current.scrollTop;
       preRef.current.scrollLeft = textareaRef.current.scrollLeft;
     }
+  };
+
+  const updateCursorPosition = () => {
+    if (!textareaRef.current) return;
+    const start = textareaRef.current.selectionStart;
+    const textBefore = block.code.substring(0, start);
+    const lines = textBefore.split('\n');
+    const line = lines.length;
+    const col = lines[lines.length - 1].length + 1;
+    setCursorPos({ line, col });
   };
 
   const handleCopy = async (e: React.MouseEvent) => {
@@ -197,7 +134,6 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback
       const el = document.createElement('textarea');
       el.value = block.code;
       document.body.appendChild(el);
@@ -209,27 +145,87 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
     }
   };
 
-  // Keyboard ergonomics: Tab indentation, Enter auto-indent, Auto-closing brackets & quotes
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Run on Ctrl+Enter / Cmd+Enter
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      runPythonCode();
-      return;
+  const handleTitleSubmit = () => {
+    setIsEditingTitle(false);
+    const trimmed = titleInput.trim();
+    if (trimmed) {
+      onUpdate({ title: trimmed });
+    } else {
+      setTitleInput(block.title || 'main.py');
     }
+  };
 
+  // Full Python punctuation, auto-indentation, and typing ergonomics
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const target = e.currentTarget;
     const start = target.selectionStart;
     const end = target.selectionEnd;
     const code = block.code;
 
-    // Tab indentation
+    // 1. Tab / Shift+Tab handling
     if (e.key === 'Tab') {
       e.preventDefault();
+      
+      // Multi-line selection indentation or unindentation
+      if (start !== end && code.substring(start, end).includes('\n')) {
+        const lineStart = code.lastIndexOf('\n', start - 1) + 1;
+        let lineEnd = code.indexOf('\n', end);
+        if (lineEnd === -1) lineEnd = code.length;
+
+        const selectionBlock = code.substring(lineStart, lineEnd);
+        const lines = selectionBlock.split('\n');
+
+        if (e.shiftKey) {
+          // Unindent lines
+          const unindented = lines.map(line => {
+            if (line.startsWith('    ')) return line.substring(4);
+            if (line.startsWith('\t')) return line.substring(1);
+            return line.replace(/^ {1,3}/, '');
+          }).join('\n');
+
+          const newCode = code.substring(0, lineStart) + unindented + code.substring(lineEnd);
+          onUpdate({ code: newCode });
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.selectionStart = lineStart;
+              textareaRef.current.selectionEnd = lineStart + unindented.length;
+            }
+          }, 0);
+        } else {
+          // Indent lines
+          const indented = lines.map(line => '    ' + line).join('\n');
+          const newCode = code.substring(0, lineStart) + indented + code.substring(lineEnd);
+          onUpdate({ code: newCode });
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.selectionStart = lineStart;
+              textareaRef.current.selectionEnd = lineStart + indented.length;
+            }
+          }, 0);
+        }
+        return;
+      }
+
+      // Single line Shift+Tab unindent
+      if (e.shiftKey) {
+        const lineStart = code.lastIndexOf('\n', start - 1) + 1;
+        const linePrefix = code.substring(lineStart, start);
+        if (linePrefix.endsWith('    ')) {
+          const newCode = code.substring(0, start - 4) + code.substring(start);
+          onUpdate({ code: newCode });
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.selectionStart = textareaRef.current.selectionEnd = Math.max(lineStart, start - 4);
+            }
+          }, 0);
+        }
+        return;
+      }
+
+      // Standard 4-spaces Python Tab indent
       const spaces = '    ';
       const newCode = code.substring(0, start) + spaces + code.substring(end);
       onUpdate({ code: newCode });
-
       setTimeout(() => {
         if (textareaRef.current) {
           textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 4;
@@ -238,7 +234,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       return;
     }
 
-    // Auto-closing brackets and quotes pairs
+    // 2. Python Auto-closing Pairs & Selection Wrapping: (), [], {}, "", ''
     const PAIRS: Record<string, string> = {
       '(': ')',
       '[': ']',
@@ -247,11 +243,10 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       "'": "'"
     };
 
-    // If an opening bracket or quote is typed
     if (PAIRS[e.key] && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const closing = PAIRS[e.key];
 
-      // If text is selected, wrap the selection in the pair
+      // If text is selected, wrap selection in the pair
       if (start !== end) {
         e.preventDefault();
         const selectedText = code.substring(start, end);
@@ -266,7 +261,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
         return;
       }
 
-      // If quote typed and the next character is already that same quote, just step over it
+      // Step over quote if cursor is directly in front of the same quote
       if ((e.key === '"' || e.key === "'") && code[start] === e.key) {
         e.preventDefault();
         setTimeout(() => {
@@ -277,7 +272,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
         return;
       }
 
-      // Otherwise insert pair and place cursor in between
+      // Insert pair and keep cursor in middle
       e.preventDefault();
       const newCode = code.substring(0, start) + e.key + closing + code.substring(start);
       onUpdate({ code: newCode });
@@ -289,7 +284,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       return;
     }
 
-    // Overtype / step over closing bracket when typed directly before existing closing char
+    // 3. Step over closing bracket if typed directly before existing closing char
     const CLOSING_CHARS = new Set([')', ']', '}', '"', "'"]);
     if (CLOSING_CHARS.has(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       if (start === end && code[start] === e.key) {
@@ -303,7 +298,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       }
     }
 
-    // Auto-delete pair on Backspace between empty pair
+    // 4. Backspace: delete both characters when between empty pairs
     if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       if (start === end && start > 0) {
         const charBefore = code[start - 1];
@@ -328,7 +323,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       }
     }
 
-    // Enter auto-indent
+    // 5. Enter: Auto-indentation following Python colon and block structure
     if (e.key === 'Enter') {
       e.preventDefault();
       const beforeCursor = code.substring(0, start);
@@ -340,8 +335,9 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       const baseIndent = match ? match[1] : '';
       let indent = baseIndent;
 
-      // If line ends with colon, increase indentation by 4 spaces
-      if (lastLine.trim().endsWith(':')) {
+      // In Python, any line ending with a colon ':' starts a new code block (+4 spaces indent)
+      const trimmedLine = lastLine.trim();
+      if (trimmedLine.endsWith(':')) {
         indent += '    ';
       }
 
@@ -380,27 +376,14 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
     }
   };
 
-  // Python execution engine with native server runner and Pyodide WebAssembly fallback
-  const runPythonCode = async () => {
-    if (isRunning) return;
-    setIsRunning(true);
-    setStatusMessage('Запуск...');
-    try {
-      const res = await executePythonCode(block.code, (msg) => {
-        setStatusMessage(msg);
-      });
-      onUpdate({ output: res.output });
-    } catch (err: any) {
-      onUpdate({ 
-        output: `❌ Ошибка выполнения:\n${err.message || String(err)}` 
-      });
-    } finally {
-      setIsRunning(false);
-      setStatusMessage(null);
-    }
+  // Adjust window height to fit code content perfectly (green dot action)
+  const handleAutoFitContent = () => {
+    const lines = block.code.split('\n').length;
+    const calculatedHeight = Math.max(160, Math.min(800, lines * codeLineHeight + 85));
+    onUpdate({ height: calculatedHeight, isMinimized: false });
   };
 
-  // Syntax highlighting parser
+  // Python Syntax Highlighting Engine
   const renderHighlightedCode = (
     code: string, 
     fontSize: number, 
@@ -410,37 +393,35 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
     gutterPR: number
   ) => {
     const lines = code.split('\n');
-    
-    // Keyword matchers
-    const keywords = /\b(def|class|import|from|as|return|if|elif|else|while|for|in|try|except|finally|raise|with|yield|lambda|pass|break|continue|global|nonlocal|assert|async|await)\b/g;
-    const builtins = /\b(print|len|range|int|float|str|list|dict|set|tuple|bool|sum|min|max|abs|round|enumerate|zip|map|filter|open|input|type|sorted|reversed)\b/g;
+
+    // Python Keywords
+    const keywords = /\b(def|class|import|from|as|return|if|elif|else|while|for|in|try|except|finally|raise|with|yield|lambda|pass|break|continue|global|nonlocal|assert|async|await|match|case|del)\b/g;
+    const logicOps = /\b(and|or|not|is)\b/g;
+    const builtins = /\b(print|len|range|int|float|str|list|dict|set|tuple|bool|sum|min|max|abs|round|enumerate|zip|map|filter|open|input|type|sorted|reversed|any|all|isinstance|issubclass|id|super|help|dir)\b/g;
     const literals = /\b(True|False|None)\b/g;
+    const specialVars = /\b(self|cls)\b/g;
 
     return lines.map((line, lineIdx) => {
-      // Check for comment
+      // Check for Python comment: '#' outside of strings
       const commentIdx = line.indexOf('#');
       let codePart = commentIdx !== -1 ? line.substring(0, commentIdx) : line;
       const commentPart = commentIdx !== -1 ? line.substring(commentIdx) : '';
 
-      // Highlight strings first
-      // Tokenize strings and other tokens
+      // Tokenize strings first: single quote, double quote, triple quotes, f-strings, r-strings
       const parts: React.ReactNode[] = [];
       let lastIndex = 0;
 
-      // Regex for strings: "...", '...', f"...", f'...'
-      const stringRegex = /(f?["'])(?:(?=(\\?))\2[\s\S])*?\1/g;
+      const stringRegex = /(?:f|r|b|fr|rf)?(?:"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g;
       let match;
 
       while ((match = stringRegex.exec(codePart)) !== null) {
-        // Text before string
         if (match.index > lastIndex) {
           parts.push(highlightTokens(codePart.substring(lastIndex, match.index), `${lineIdx}-${lastIndex}`));
         }
-        // The string itself
         parts.push(
           <span 
             key={`${lineIdx}-str-${match.index}`} 
-            className={isDarkMode ? 'text-emerald-400 font-medium' : 'text-emerald-600 font-medium'}
+            className={isDarkMode ? 'text-emerald-400 font-normal' : 'text-emerald-600 font-normal'}
           >
             {match[0]}
           </span>
@@ -454,9 +435,10 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
 
       return (
         <div key={lineIdx} className="table-row" style={{ height: `${lineHeight}px`, lineHeight: `${lineHeight}px` }}>
+          {/* Line number gutter */}
           <span 
             className={`table-cell text-right select-none font-mono transition-colors ${
-              isDarkMode ? 'text-zinc-600' : 'text-slate-400'
+              isDarkMode ? 'text-zinc-500/70 border-r border-zinc-800/80 bg-zinc-950/20' : 'text-slate-400 border-r border-slate-200/80 bg-slate-50/60'
             }`}
             style={{ 
               width: `${gutterW}px`, 
@@ -467,8 +449,9 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
           >
             {lineIdx + 1}
           </span>
+          {/* Highlighted text line */}
           <span 
-            className="table-cell whitespace-pre font-mono"
+            className="table-cell whitespace-pre font-mono pl-3"
             style={{ fontSize: `${fontSize}px`, lineHeight: `${lineHeight}px` }}
           >
             {parts}
@@ -484,12 +467,23 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
     });
 
     function highlightTokens(text: string, keyPrefix: string): React.ReactNode {
-      // Split text into word / non-word tokens
-      const tokenRegex = /(\b[a-zA-Z_][a-zA-Z0-9_]*\b|\b\d+(?:\.\d+)?\b|[^\s\w]+|\s+)/g;
+      // Split into word tokens, numbers, decorators, operators, punctuation
+      const tokenRegex = /(@[a-zA-Z_][a-zA-Z0-9_.]*|\b[a-zA-Z_][a-zA-Z0-9_]*\b|\b\d+(?:\.\d+)?\b|[^\s\w]+|\s+)/g;
       const tokens = text.match(tokenRegex) || [text];
 
       return tokens.map((token, idx) => {
         const key = `${keyPrefix}-${idx}`;
+
+        // Decorators: @property, @staticmethod, etc.
+        if (token.startsWith('@')) {
+          return (
+            <span key={key} className={isDarkMode ? 'text-yellow-400 font-medium' : 'text-amber-600 font-medium'}>
+              {token}
+            </span>
+          );
+        }
+
+        // Keywords
         if (keywords.test(token)) {
           keywords.lastIndex = 0;
           return (
@@ -498,6 +492,18 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
             </span>
           );
         }
+
+        // Logical operators: and, or, not, is
+        if (logicOps.test(token)) {
+          logicOps.lastIndex = 0;
+          return (
+            <span key={key} className={isDarkMode ? 'text-rose-400 font-medium' : 'text-rose-600 font-medium'}>
+              {token}
+            </span>
+          );
+        }
+
+        // Built-ins: print, len, range, int, float, str, etc.
         if (builtins.test(token)) {
           builtins.lastIndex = 0;
           return (
@@ -506,14 +512,28 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
             </span>
           );
         }
+
+        // Literals: True, False, None
         if (literals.test(token)) {
           literals.lastIndex = 0;
           return (
-            <span key={key} className={isDarkMode ? 'text-amber-400 font-semibold' : 'text-amber-600 font-semibold'}>
+            <span key={key} className={isDarkMode ? 'text-amber-300 font-semibold' : 'text-amber-700 font-semibold'}>
               {token}
             </span>
           );
         }
+
+        // self, cls
+        if (specialVars.test(token)) {
+          specialVars.lastIndex = 0;
+          return (
+            <span key={key} className={isDarkMode ? 'text-rose-400/90 italic' : 'text-rose-700 italic'}>
+              {token}
+            </span>
+          );
+        }
+
+        // Numbers: 42, 3.14
         if (/^\d+(\.\d+)?$/.test(token)) {
           return (
             <span key={key} className={isDarkMode ? 'text-orange-400' : 'text-orange-600'}>
@@ -521,13 +541,25 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
             </span>
           );
         }
-        if (/^(==|!=|<=|>=|<|>|\+|-|\*|\/|\*\*|\/\/|%|=)$/.test(token)) {
+
+        // Python punctuation & operators
+        if (/^(==|!=|<=|>=|<|>|\+|-|\*|\/|\*\*|\/\/|%|=|->|:|\+=|-=|\*=|\/=)$/.test(token)) {
           return (
-            <span key={key} className={isDarkMode ? 'text-cyan-400' : 'text-blue-600'}>
+            <span key={key} className={isDarkMode ? 'text-indigo-400 font-medium' : 'text-indigo-600 font-medium'}>
               {token}
             </span>
           );
         }
+
+        // Parentheses, brackets, braces
+        if (/^[(){}[\]]$/.test(token)) {
+          return (
+            <span key={key} className={isDarkMode ? 'text-zinc-300' : 'text-slate-700'}>
+              {token}
+            </span>
+          );
+        }
+
         return <span key={key}>{token}</span>;
       });
     }
@@ -536,33 +568,24 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
   const lineCount = block.code.split('\n').length;
   const isMinimized = block.isMinimized ?? false;
 
-  // Proportional font & UI scaling based on code block window dimensions
+  // Proportional scaling for smooth typography as window resizes
   const baseWidth = 480;
   const baseHeight = 250;
   const currentWidth = block.width;
   const currentHeight = block.height || baseHeight;
 
-  // Resizing horizontally or vertically smoothly adjusts font size proportionally
   const widthRatio = currentWidth / baseWidth;
   const heightRatio = currentHeight / baseHeight;
   const dimensionRatio = Math.max(0.75, Math.min(1.5, widthRatio * 0.65 + heightRatio * 0.35));
-
-  // The whiteboard zoom is handled natively via CSS transform scale(scale),
-  // so dynamicScale only handles manual resizing of the block window
   const dynamicScale = dimensionRatio;
 
-  // Typography & layout metrics synchronized with window dimensions
   const codeFontSize = Math.round(13 * dynamicScale);
   const codeLineHeight = Math.round(20 * dynamicScale);
-  const gutterWidth = Math.max(32, Math.round(44 * dynamicScale));
+  const gutterWidth = Math.max(34, Math.round(44 * dynamicScale));
   const gutterPadRight = Math.max(4, Math.round(8 * dynamicScale));
   const lineNumberFontSize = Math.max(9, Math.round(11 * dynamicScale));
   const editorPadding = Math.max(8, Math.round(12 * dynamicScale));
-
-  const headerTitleFontSize = Math.max(11, Math.min(16, Math.round(12 * dynamicScale)));
-  const outputFontSize = Math.max(10, Math.min(16, Math.round(11.5 * dynamicScale)));
-  const outputLineHeight = Math.round(16 * dynamicScale);
-  const footerFontSize = Math.max(9, Math.min(13, Math.round(10 * dynamicScale)));
+  const footerFontSize = Math.max(9, Math.min(13, Math.round(10.5 * dynamicScale)));
 
   return (
     <div
@@ -571,11 +594,11 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
         e.stopPropagation();
         onFocus();
       }}
-      className={`absolute rounded-xl shadow-2xl overflow-hidden transition-colors duration-200 flex flex-col border ${
+      className={`absolute rounded-xl overflow-hidden transition-all duration-200 flex flex-col border select-none ${
         isDarkMode 
-          ? 'bg-[#18181b] border-[#3f3f46] text-zinc-100 shadow-black/70' 
-          : 'bg-white border-slate-300 text-slate-900 shadow-slate-300/50'
-      } ${isActive ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
+          ? 'bg-[#141518] border-zinc-700/80 text-zinc-100 shadow-2xl shadow-black/70' 
+          : 'bg-white border-slate-300/80 text-slate-900 shadow-xl shadow-slate-300/60'
+      } ${isActive ? 'ring-2 ring-blue-500/80 ring-offset-2 ring-offset-transparent' : ''}`}
       style={{
         position: 'absolute',
         transform: `translate3d(${screenPos.x}px, ${screenPos.y}px, 0) scale(${scale})`,
@@ -584,76 +607,133 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
         top: 0,
         width: `${block.width}px`,
         height: isMinimized ? 'auto' : `${block.height || baseHeight}px`,
-        zIndex: isActive ? 25 : 15,
+        zIndex: isActive ? 30 : 15,
         willChange: 'transform'
       }}
     >
-      {/* Header Bar with Python Branding & Controls */}
+      {/* Modern Mac-style Window Header Bar */}
       <div
         onMouseDown={onDragStart}
         onTouchStart={onDragStart}
-        className={`px-3 py-2 flex items-center justify-between select-none cursor-move touch-none border-b transition-colors flex-shrink-0 ${
+        className={`px-3 py-2.5 flex items-center justify-between cursor-move touch-none border-b transition-colors flex-shrink-0 ${
           isDarkMode 
-            ? 'bg-[#202024] border-[#323238]' 
-            : 'bg-slate-100 border-slate-200'
+            ? 'bg-[#1c1d22] border-zinc-800' 
+            : 'bg-slate-100/90 border-slate-200'
         }`}
       >
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-blue-600/15 text-blue-500 font-semibold text-xs tracking-wide">
-            {/* Python Snake Icon */}
-            <svg className="w-4 h-4" viewBox="0 0 110 110" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M54.5 5.5C28.2 5.5 29.8 17 29.8 17L29.9 29.2H55.2V32.9H18.9C18.9 32.9 5.5 31.4 5.5 57.7C5.5 84 17.2 82.5 17.2 82.5H24.3V71.8C24.3 71.8 23.7 58.7 36.8 58.7H62.1C62.1 58.7 74.3 59.3 74.3 47.1V21.8C74.3 21.8 76 5.5 54.5 5.5ZM38.2 14.8C41.6 14.8 44.3 17.5 44.3 20.9C44.3 24.3 41.6 27 38.2 27C34.8 27 32.1 24.3 32.1 20.9C32.1 17.5 34.8 14.8 38.2 14.8Z" fill="#387eb8"/>
-              <path d="M55.5 104.5C81.8 104.5 80.2 93 80.2 93L80.1 80.8H54.8V77.1H91.1C91.1 77.1 104.5 78.6 104.5 52.3C104.5 26 92.8 27.5 92.8 27.5H85.7V38.2C85.7 38.2 86.3 51.3 73.2 51.3H47.9C47.9 51.3 35.7 50.7 35.7 62.9V88.2C35.7 88.2 34 104.5 55.5 104.5ZM71.8 95.2C68.4 95.2 65.7 92.5 65.7 89.1C65.7 85.7 68.4 83 71.8 83C75.2 83 77.9 85.7 77.9 89.1C77.9 92.5 75.2 95.2 71.8 95.2Z" fill="#ffe052"/>
-            </svg>
-            <span>Python 3</span>
-          </div>
+        {/* Left: Window Control Traffic Light Dots */}
+        <div className="flex items-center gap-2" onMouseDown={(e) => e.stopPropagation()}>
+          {/* Red: Close / Delete */}
+          <button
+            onClick={onDelete}
+            title="Удалить блок"
+            className="group relative w-3 h-3 rounded-full bg-[#ff5f56] border border-[#e0443e] flex items-center justify-center transition-transform active:scale-90 hover:brightness-105"
+          >
+            <span className="opacity-0 group-hover:opacity-100 text-[8px] font-bold text-black/70 leading-none">×</span>
+          </button>
 
-          <span className={`text-xs font-mono font-medium truncate max-w-[130px] ${
-            isDarkMode ? 'text-zinc-300' : 'text-slate-700'
-          }`}>
-            {block.title || 'script.py'}
-          </span>
+          {/* Yellow: Minimize / Collapse */}
+          <button
+            onClick={() => onUpdate({ isMinimized: !isMinimized })}
+            title={isMinimized ? "Развернуть" : "Свернуть"}
+            className="group relative w-3 h-3 rounded-full bg-[#ffbd2e] border border-[#dea123] flex items-center justify-center transition-transform active:scale-90 hover:brightness-105"
+          >
+            <span className="opacity-0 group-hover:opacity-100 text-[8px] font-bold text-black/70 leading-none">-</span>
+          </button>
+
+          {/* Green: Fit to Content */}
+          <button
+            onClick={handleAutoFitContent}
+            title="Подогнать высоту по коду"
+            className="group relative w-3 h-3 rounded-full bg-[#27c93f] border border-[#1aab29] flex items-center justify-center transition-transform active:scale-90 hover:brightness-105"
+          >
+            <span className="opacity-0 group-hover:opacity-100 text-[7px] font-bold text-black/70 leading-none">+</span>
+          </button>
         </div>
 
+        {/* Center: File Title with Python Snake Badge */}
+        <div 
+          className="flex items-center gap-1.5 px-2 py-0.5 rounded cursor-pointer group max-w-[200px]"
+          onMouseDown={(e) => e.stopPropagation()}
+          onDoubleClick={() => setIsEditingTitle(true)}
+          title="Двойной клик для переименования"
+        >
+          {/* Python Logo */}
+          <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 110 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M54.5 5.5C28.2 5.5 29.8 17 29.8 17L29.9 29.2H55.2V32.9H18.9C18.9 32.9 5.5 31.4 5.5 57.7C5.5 84 17.2 82.5 17.2 82.5H24.3V71.8C24.3 71.8 23.7 58.7 36.8 58.7H62.1C62.1 58.7 74.3 59.3 74.3 47.1V21.8C74.3 21.8 76 5.5 54.5 5.5ZM38.2 14.8C41.6 14.8 44.3 17.5 44.3 20.9C44.3 24.3 41.6 27 38.2 27C34.8 27 32.1 24.3 32.1 20.9C32.1 17.5 34.8 14.8 38.2 14.8Z" fill="#387eb8"/>
+            <path d="M55.5 104.5C81.8 104.5 80.2 93 80.2 93L80.1 80.8H54.8V77.1H91.1C91.1 77.1 104.5 78.6 104.5 52.3C104.5 26 92.8 27.5 92.8 27.5H85.7V38.2C85.7 38.2 86.3 51.3 73.2 51.3H47.9C47.9 51.3 35.7 50.7 35.7 62.9V88.2C35.7 88.2 34 104.5 55.5 104.5ZM71.8 95.2C68.4 95.2 65.7 92.5 65.7 89.1C65.7 85.7 68.4 83 71.8 83C75.2 83 77.9 85.7 77.9 89.1C77.9 92.5 75.2 95.2 71.8 95.2Z" fill="#ffe052"/>
+          </svg>
+
+          {isEditingTitle ? (
+            <input
+              ref={titleInputRef}
+              type="text"
+              value={titleInput}
+              autoFocus
+              onChange={(e) => setTitleInput(e.target.value)}
+              onBlur={handleTitleSubmit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleTitleSubmit();
+                if (e.key === 'Escape') {
+                  setTitleInput(block.title || 'main.py');
+                  setIsEditingTitle(false);
+                }
+              }}
+              className={`text-xs font-mono font-medium px-1 py-0.5 rounded outline-none border ${
+                isDarkMode 
+                  ? 'bg-zinc-800 border-zinc-600 text-white' 
+                  : 'bg-white border-blue-400 text-slate-800'
+              }`}
+            />
+          ) : (
+            <span className={`text-xs font-mono font-medium truncate ${
+              isDarkMode ? 'text-zinc-300 group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'
+            }`}>
+              {block.title || 'main.py'}
+            </span>
+          )}
+        </div>
+
+        {/* Right: Actions (Presets, Copy) */}
         <div className="flex items-center gap-1" onMouseDown={(e) => e.stopPropagation()}>
-          {/* Quick Presets Dropdown */}
+          {/* Examples Preset Menu */}
           <div className="relative">
             <button
               onClick={() => setShowPresets(!showPresets)}
-              className={`p-1 rounded text-xs flex items-center gap-1 transition-colors ${
+              className={`px-2 py-1 rounded text-xs font-sans flex items-center gap-1 transition-colors ${
                 isDarkMode 
-                  ? 'text-zinc-400 hover:text-white hover:bg-zinc-700/60' 
+                  ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800' 
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
               }`}
-              title="Примеры математического кода"
+              title="Примеры кода"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span className="text-[11px] hidden sm:inline font-sans">Примеры</span>
+              <FileCode2 className="w-3.5 h-3.5" />
+              <span className="text-[11px] hidden sm:inline">Примеры</span>
             </button>
 
             {showPresets && (
               <div 
-                className={`absolute right-0 top-full mt-1.5 w-56 rounded-lg shadow-xl border p-1 z-50 text-xs font-sans select-none ${
+                className={`absolute right-0 top-full mt-1.5 w-60 rounded-lg shadow-2xl border p-1 z-50 text-xs font-sans select-none backdrop-blur-md ${
                   isDarkMode 
-                    ? 'bg-[#202024] border-[#3f3f46] text-zinc-200' 
-                    : 'bg-white border-slate-200 text-slate-800'
+                    ? 'bg-[#1e1f24]/95 border-zinc-700 text-zinc-200' 
+                    : 'bg-white/95 border-slate-200 text-slate-800'
                 }`}
               >
-                <div className={`px-2 py-1 text-[11px] font-semibold border-b ${
-                  isDarkMode ? 'text-zinc-400 border-zinc-700' : 'text-slate-500 border-slate-100'
+                <div className={`px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider border-b mb-1 ${
+                  isDarkMode ? 'text-zinc-400 border-zinc-700/60' : 'text-slate-400 border-slate-100'
                 }`}>
-                  Выберите шаблон:
+                  Примеры Python
                 </div>
                 {PYTHON_PRESETS.map((p, idx) => (
                   <button
                     key={idx}
                     onClick={() => {
-                      onUpdate({ code: p.code, output: undefined });
+                      onUpdate({ code: p.code });
                       setShowPresets(false);
                     }}
-                    className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
+                    className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors ${
                       isDarkMode 
-                        ? 'hover:bg-zinc-700/60 hover:text-white' 
+                        ? 'hover:bg-zinc-800 hover:text-white' 
                         : 'hover:bg-blue-50 hover:text-blue-600'
                     }`}
                   >
@@ -664,58 +744,29 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
             )}
           </div>
 
-          {/* Copy Code */}
+          {/* Copy Button */}
           <button
             onClick={handleCopy}
-            className={`p-1.5 rounded transition-colors ${
-              isDarkMode 
-                ? 'text-zinc-400 hover:text-white hover:bg-zinc-700/60' 
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-sans transition-all duration-150 ${
+              copied
+                ? (isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600')
+                : (isDarkMode 
+                    ? 'text-zinc-300 hover:text-white hover:bg-zinc-800' 
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200')
             }`}
             title="Скопировать код"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-          </button>
-
-          {/* Run Code Button */}
-          <button
-            onClick={runPythonCode}
-            disabled={isRunning}
-            className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-all shadow-sm ${
-              isRunning
-                ? 'bg-blue-500/50 text-white cursor-wait'
-                : 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
-            }`}
-            title="Запустить код (Ctrl+Enter)"
-          >
-            <Play className={`w-3 h-3 fill-current ${isRunning ? 'animate-spin' : ''}`} />
-            <span>{isRunning ? (statusMessage || '...') : 'Запуск'}</span>
-          </button>
-
-          {/* Minimize toggle */}
-          <button
-            onClick={() => onUpdate({ isMinimized: !isMinimized })}
-            className={`p-1.5 rounded transition-colors ${
-              isDarkMode 
-                ? 'text-zinc-400 hover:text-white hover:bg-zinc-700/60' 
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-            }`}
-            title={isMinimized ? "Развернуть" : "Свернуть"}
-          >
-            {isMinimized ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-          </button>
-
-          {/* Delete Block */}
-          <button
-            onClick={onDelete}
-            className={`p-1.5 rounded transition-colors ${
-              isDarkMode 
-                ? 'text-red-400/80 hover:text-red-400 hover:bg-red-950/40' 
-                : 'text-red-600/80 hover:text-red-600 hover:bg-red-50'
-            }`}
-            title="Удалить блок кода"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-500 stroke-[2.5]" />
+                <span className="text-[11px] font-medium text-emerald-500">Скопировано</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                <span className="text-[11px] font-medium hidden sm:inline">Копировать</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -725,20 +776,20 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
         <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
           <div 
             className={`relative flex-1 min-h-[90px] overflow-hidden ${
-              isDarkMode ? 'bg-[#18181b]' : 'bg-white'
+              isDarkMode ? 'bg-[#141518]' : 'bg-[#fafafa]'
             }`}
           >
             {/* Syntax Highlighted View Underneath */}
             <pre
               ref={preRef}
               aria-hidden="true"
-              className="absolute inset-0 m-0 overflow-auto pointer-events-none font-mono whitespace-pre"
+              className="absolute inset-0 m-0 overflow-auto pointer-events-none font-mono whitespace-pre select-none"
               style={{
                 tabSize: 4,
                 padding: `${editorPadding}px`,
                 fontSize: `${codeFontSize}px`,
                 lineHeight: `${codeLineHeight}px`,
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace'
               }}
             >
               {renderHighlightedCode(block.code, codeFontSize, codeLineHeight, gutterWidth, lineNumberFontSize, gutterPadRight)}
@@ -748,93 +799,68 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
             <textarea
               ref={textareaRef}
               value={block.code}
-              onChange={(e) => onUpdate({ code: e.target.value })}
+              onChange={(e) => {
+                onUpdate({ code: e.target.value });
+                updateCursorPosition();
+              }}
+              onKeyUp={updateCursorPosition}
+              onClick={updateCursorPosition}
               onScroll={handleScroll}
               onKeyDown={handleKeyDown}
               spellCheck={false}
               autoCapitalize="off"
               autoComplete="off"
               autoCorrect="off"
-              className="absolute inset-0 w-full h-full m-0 bg-transparent text-transparent caret-blue-500 outline-none resize-none font-mono whitespace-pre overflow-auto z-10 select-text"
+              className={`absolute inset-0 w-full h-full m-0 bg-transparent text-transparent outline-none resize-none font-mono whitespace-pre overflow-auto z-10 select-text ${
+                isDarkMode 
+                  ? 'caret-blue-400 placeholder:text-zinc-500/80 selection:bg-blue-600/30' 
+                  : 'caret-blue-600 placeholder:text-slate-400 selection:bg-blue-100'
+              }`}
               style={{
                 tabSize: 4,
                 padding: `${editorPadding}px`,
-                paddingLeft: `${gutterWidth + editorPadding}px`,
+                paddingLeft: `${gutterWidth + editorPadding + 12}px`,
                 fontSize: `${codeFontSize}px`,
                 lineHeight: `${codeLineHeight}px`,
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+                fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace'
               }}
-              placeholder="# Напишите Python код здесь..."
+              placeholder="# Введите Python код..."
             />
           </div>
 
-          {/* Console / Output Area */}
-          {block.output && (
-            <div 
-              className={`border-t p-2.5 font-mono overflow-y-auto transition-colors flex-shrink-0 ${
-                isDarkMode 
-                  ? 'bg-[#1e1e24] border-[#323238] text-zinc-200' 
-                  : 'bg-slate-50 border-slate-200 text-slate-800'
-              }`}
-              style={{ maxHeight: `${Math.round(140 * dynamicScale)}px` }}
-            >
-              <div className="flex items-center justify-between pb-1 mb-1 border-b border-current/10">
-                <div 
-                  className="flex items-center gap-1.5 font-sans font-semibold opacity-75"
-                  style={{ fontSize: `${Math.max(10, Math.round(11 * dynamicScale))}px` }}
-                >
-                  <Terminal className="w-3.5 h-3.5 text-blue-500" />
-                  <span>Вывод консоли:</span>
-                </div>
-                <button
-                  onClick={() => onUpdate({ output: undefined })}
-                  className="font-sans opacity-60 hover:opacity-100 underline"
-                  style={{ fontSize: `${Math.max(9, Math.round(10 * dynamicScale))}px` }}
-                >
-                  Очистить
-                </button>
-              </div>
-              <pre 
-                className="whitespace-pre-wrap font-mono leading-relaxed"
-                style={{
-                  fontSize: `${outputFontSize}px`,
-                  lineHeight: `${outputLineHeight}px`
-                }}
-              >
-                {block.output}
-              </pre>
-            </div>
-          )}
-
-          {/* Footer Bar with Resize Grip */}
+          {/* Clean Bottom Status Bar */}
           <div 
-            className={`px-3 py-1 flex items-center justify-between border-t select-none transition-colors flex-shrink-0 ${
+            className={`px-3 py-1.5 flex items-center justify-between border-t select-none transition-colors flex-shrink-0 ${
               isDarkMode 
-                ? 'bg-[#1f1f23] border-[#2e2e33] text-zinc-500' 
-                : 'bg-slate-100 border-slate-200 text-slate-400'
+                ? 'bg-[#1a1b20] border-zinc-800 text-zinc-400' 
+                : 'bg-slate-100/90 border-slate-200 text-slate-500'
             }`}
             style={{ fontSize: `${footerFontSize}px` }}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <span className="font-mono">Python 3</span>
+              <span className="opacity-40">•</span>
               <span>{lineCount} {lineCount === 1 ? 'строка' : (lineCount < 5 ? 'строки' : 'строк')}</span>
-              <span>•</span>
-              <span>Ctrl+Enter для запуска</span>
+              <span className="opacity-40 hidden sm:inline">•</span>
+              <span className="font-mono text-[10px] opacity-75 hidden sm:inline">
+                Стр {cursorPos.line}, Кол {cursorPos.col}
+              </span>
             </div>
 
-            {/* Resize Handle */}
+            {/* Resize Grip Handle */}
             <div 
               onMouseDown={onResizeStart}
               onTouchStart={onResizeStart}
-              className="cursor-nwse-resize p-1 -mr-1 hover:text-blue-500 touch-none select-none"
-              title="Изменить размер"
+              className="cursor-nwse-resize p-1 -mr-1 hover:text-blue-500 touch-none select-none transition-colors"
+              title="Изменить размер блока"
             >
               <svg className="w-3 h-3" viewBox="0 0 10 10" fill="currentColor">
-                <circle cx="8" cy="8" r="1" />
-                <circle cx="5" cy="8" r="1" />
-                <circle cx="8" cy="5" r="1" />
-                <circle cx="2" cy="8" r="1" />
-                <circle cx="5" cy="5" r="1" />
-                <circle cx="8" cy="2" r="1" />
+                <circle cx="8" cy="8" r="1.2" />
+                <circle cx="4.5" cy="8" r="1.2" />
+                <circle cx="8" cy="4.5" r="1.2" />
+                <circle cx="1" cy="8" r="1.2" />
+                <circle cx="4.5" cy="4.5" r="1.2" />
+                <circle cx="8" cy="1" r="1.2" />
               </svg>
             </div>
           </div>

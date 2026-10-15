@@ -171,15 +171,6 @@ const Header: React.FC<HeaderProps> = ({
             className="hidden" 
             accept=".json,.mathters"
         />
-
-        <button 
-          onClick={handleShareClick}
-          className="ml-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
-          title="Поделиться доской (скопировать ссылку с кодом доступа)"
-        >
-          {copied ? <Check className="w-4 h-4 text-emerald-300" /> : <Share2 className="w-4 h-4" />}
-          {copied ? 'Скопировано!' : 'Поделиться'}
-        </button>
       </div>
     </div>
   );

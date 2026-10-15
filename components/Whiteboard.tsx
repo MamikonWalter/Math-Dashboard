@@ -23,6 +23,7 @@ interface WhiteboardProps {
   onCodeBlockCreated?: (block: CodeBlockItem) => void;
   onCodeBlockUpdated?: (block: CodeBlockItem) => void;
   onCodeBlockDeleted?: (blockId: string) => void;
+  onSelectTool?: (tool: ToolType) => void;
 }
 
 interface TextInputState {
@@ -53,6 +54,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   onCodeBlockCreated,
   onCodeBlockUpdated,
   onCodeBlockDeleted,
+  onSelectTool,
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -623,28 +625,48 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     } else {
       ctx.rect(x, y, w, headerH);
     }
-    ctx.fillStyle = isDark ? '#202024' : '#f1f5f9';
+    ctx.fillStyle = isDark ? '#1c1d22' : '#f1f5f9';
     ctx.fill();
-    ctx.strokeStyle = isDark ? '#323238' : '#e2e8f0';
+    ctx.strokeStyle = isDark ? '#27272a' : '#e2e8f0';
     ctx.stroke();
 
-    // Header title
-    const headerTitleSize = Math.max(10, Math.round(12 * dynamicScale));
-    ctx.font = `bold ${headerTitleSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-    ctx.fillStyle = '#387eb8';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Python 3', x + 12, y + headerH / 2);
+    // macOS Window control dots
+    const dotRadius = Math.max(3.5, Math.min(6, 4.5 * dynamicScale));
+    const dotY = y + headerH / 2;
+    const dotStartX = x + 12;
+    const dotGap = Math.max(9, 13 * dynamicScale);
 
-    ctx.font = `${headerTitleSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-    ctx.fillStyle = isDark ? '#d4d4d8' : '#475569';
-    ctx.fillText(block.title || 'script.py', x + 12 + Math.round(55 * dynamicScale), y + headerH / 2);
+    // Red dot
+    ctx.beginPath();
+    ctx.arc(dotStartX, dotY, dotRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff5f56';
+    ctx.fill();
+
+    // Yellow dot
+    ctx.beginPath();
+    ctx.arc(dotStartX + dotGap, dotY, dotRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffbd2e';
+    ctx.fill();
+
+    // Green dot
+    ctx.beginPath();
+    ctx.arc(dotStartX + dotGap * 2, dotY, dotRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#27c93f';
+    ctx.fill();
+
+    // Header title
+    const headerTitleSize = Math.max(10, Math.round(11.5 * dynamicScale));
+    ctx.font = `600 ${headerTitleSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+    ctx.fillStyle = isDark ? '#d4d4d8' : '#334155';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(block.title || 'main.py', dotStartX + dotGap * 3 + 4, dotY);
     ctx.restore();
 
     if (!block.isMinimized) {
       // Line numbers gutter
-      ctx.fillStyle = isDark ? '#1f1f23' : '#f8fafc';
+      ctx.fillStyle = isDark ? '#16171a' : '#f8fafc';
       ctx.fillRect(x + 1, y + headerH, gutterW, h - headerH - 1);
-      ctx.strokeStyle = isDark ? '#2e2e33' : '#f1f5f9';
+      ctx.strokeStyle = isDark ? '#27272a' : '#e2e8f0';
       ctx.beginPath();
       ctx.moveTo(x + 1 + gutterW, y + headerH);
       ctx.lineTo(x + 1 + gutterW, y + h - 1);
@@ -657,7 +679,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
       lines.forEach((line, i) => {
         const lineY = y + headerH + Math.round(8 * dynamicScale) + i * lineH;
-        if (lineY + lineH > y + h - 20) return;
+        if (lineY + lineH > y + h - 12) return;
 
         // Line number
         ctx.fillStyle = isDark ? '#52525b' : '#94a3b8';
@@ -671,26 +693,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         } else {
           ctx.fillStyle = isDark ? '#f4f4f5' : '#0f172a';
         }
-        ctx.fillText(line, x + gutterW + Math.round(8 * dynamicScale), lineY);
+        ctx.fillText(line, x + gutterW + Math.round(10 * dynamicScale), lineY);
       });
-
-      // Output section if present
-      if (block.output) {
-        const outLines = block.output.split('\n');
-        const outLineH = Math.round(16 * dynamicScale);
-        const outH = Math.min(Math.round(80 * dynamicScale), outLines.length * outLineH + 12);
-        const outY = y + h - outH - 8;
-        ctx.fillStyle = isDark ? '#1e1e24' : '#f8fafc';
-        ctx.fillRect(x + gutterW + 6, outY, w - gutterW - 14, outH);
-        ctx.strokeStyle = isDark ? '#323238' : '#e2e8f0';
-        ctx.strokeRect(x + gutterW + 6, outY, w - gutterW - 14, outH);
-
-        ctx.font = `${Math.max(9, Math.round(11 * dynamicScale))}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-        ctx.fillStyle = isDark ? '#a1a1aa' : '#334155';
-        outLines.slice(0, 3).forEach((ol, oi) => {
-          ctx.fillText(ol, x + gutterW + 12, outY + 6 + oi * outLineH);
-        });
-      }
     }
     ctx.restore();
   };
@@ -1326,18 +1330,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             id: 'cb_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
             x: Math.round(worldPos.x),
             y: Math.round(worldPos.y),
-            width: 480,
-            height: 250,
-            title: 'script.py',
-            code: `# Python 3
-import math
-
-def solve(x):
-    return x**2 - 5*x + 6
-
-val = 5
-print(f"solve({val}) =", solve(val))
-`,
+            width: 500,
+            height: 260,
+            title: 'main.py',
+            code: '',
             output: undefined,
             isMinimized: false
         };
@@ -1347,6 +1343,7 @@ print(f"solve({val}) =", solve(val))
         pushHistory(strokesRef.current, next);
         setActiveCodeBlockId(newBlock.id);
         if (onCodeBlockCreated) onCodeBlockCreated(newBlock);
+        if (onSelectTool) onSelectTool('cursor');
         return;
     }
 
@@ -1388,7 +1385,7 @@ print(f"solve({val}) =", solve(val))
     if (tool === 'cursor') {
         // 1. Check if clicking rotation knob or resize handle on ALREADY selected stroke
         if (selectedIndicesRef.current.size === 1) {
-            const [selectedIdx] = Array.from(selectedIndicesRef.current);
+            const [selectedIdx] = Array.from(selectedIndicesRef.current) as number[];
             const selStroke = strokesRef.current[selectedIdx];
             if (selStroke) {
                 const target = getHandleOrBorderAtPoint(worldPos, selStroke);
@@ -1545,7 +1542,6 @@ print(f"solve({val}) =", solve(val))
   const move = (e: React.MouseEvent | React.TouchEvent) => {
     const coords = getCoords(e);
     const worldPos = screenToWorld(coords.x, coords.y);
-    if (onCursorMove) onCursorMove(worldPos.x, worldPos.y);
 
     if (isPanningRef.current && lastMousePosRef.current) {
        cameraRef.current.x += coords.x - lastMousePosRef.current.x;
@@ -1706,7 +1702,7 @@ print(f"solve({val}) =", solve(val))
         let hoveredTarget: { strokeIndex: number; handle: string; cursor: string } | null = null;
 
         if (selectedIndicesRef.current.size === 1) {
-            const [selectedIdx] = Array.from(selectedIndicesRef.current);
+            const [selectedIdx] = Array.from(selectedIndicesRef.current) as number[];
             const selStroke = strokesRef.current[selectedIdx];
             if (selStroke) {
                 const target = getHandleOrBorderAtPoint(worldPos, selStroke);
@@ -2061,7 +2057,7 @@ print(f"solve({val}) =", solve(val))
   useEffect(() => {
     if (selectedIndicesRef.current.size === 1) {
         // FIXED: Using array destructuring and checking for defined number to avoid index errors
-        const [index] = Array.from(selectedIndicesRef.current);
+        const [index] = Array.from(selectedIndicesRef.current) as number[];
         if (typeof index === 'number') {
             const stroke = strokesRef.current[index];
             if (stroke && (shapeTools.includes(stroke.tool) || stroke.tool === 'image' || stroke.tool === 'text')) {

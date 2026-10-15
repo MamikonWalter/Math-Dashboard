@@ -553,10 +553,12 @@ const App: React.FC = () => {
         onShapeSelect={handleShapeSelect}
         onStrokeAdded={() => persistBoard()}
         onStrokesChanged={(strokes) => persistBoard(strokes)}
+        onSelectTool={setCurrentTool}
         onCodeBlockCreated={(block) => {
           const currentBlocks = whiteboardRef.current?.getSnapshot()?.codeBlocks || [];
           const updatedBlocks = [...currentBlocks.filter(b => b.id !== block.id), block];
           persistBoard(undefined, updatedBlocks);
+          setCurrentTool('cursor');
         }}
         onCodeBlockUpdated={(block) => {
           const currentBlocks = whiteboardRef.current?.getSnapshot()?.codeBlocks || [];
