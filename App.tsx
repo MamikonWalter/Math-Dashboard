@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import Toolbar from './components/Toolbar';
@@ -11,44 +10,10 @@ import ThreeDShapesPanel from './components/ThreeDShapesPanel';
 import ZoomControls from './components/ZoomControls';
 import AIAssistant from './components/AIAssistant';
 import { ToolType, WhiteboardHandle } from './types';
-import { DEFAULT_COLOR, DEFAULT_STROKE_WIDTH, DEFAULT_ERASER_WIDTH, DEFAULT_SHAPE_SIZE } from './constants';
-import RoomWelcomeModal from './components/RoomWelcomeModal';
-import { collab, RemoteCursor } from './utils/collaboration';
+import { DEFAULT_STROKE_WIDTH, DEFAULT_ERASER_WIDTH, DEFAULT_SHAPE_SIZE } from './constants';
 import { GoogleGenAI } from "@google/genai";
 import { jsPDF } from "jspdf";
-import { 
-  saveBoardHybrid, 
-  loadBoardHybrid, 
-  getLocalBoard, 
-  getLastActiveRoomId, 
-  setLastActiveRoomId,
-  subscribeToBoardCloud 
-} from './utils/firebase';
-
-// Utility: generate clean random room ID fallback (e.g. WB-5821)
-function generateLocalRoomCode(): string {
-  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-  let code = 'WB-';
-  for (let i = 0; i < 4; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-}
-
-// Utility: safe JSON fetcher that NEVER throws JSON syntax errors on HTML/404 error pages
-async function safeFetchJson<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; data: T | null }> {
-  try {
-    const res = await fetch(url, init);
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok && contentType.includes('application/json')) {
-      const data = await res.json();
-      return { ok: true, status: res.status, data };
-    }
-    return { ok: false, status: res.status, data: null };
-  } catch (e) {
-    return { ok: false, status: 0, data: null };
-  }
-}
+import { saveLocalBoardState, loadLocalBoardState, clearLocalBoardState } from './utils/storage';
 
 const App: React.FC = () => {
   const [currentTool, setCurrentTool] = useState<ToolType>('pen');
@@ -60,7 +25,7 @@ const App: React.FC = () => {
   const [isShapeSelected, setIsShapeSelected] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
   
-  // UI Visibility
+  // UI Visibility & Theme
   const [isUIVisible, setIsUIVisible] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(true);
@@ -95,280 +60,24 @@ const App: React.FC = () => {
 
   const whiteboardRef = useRef<WhiteboardHandle>(null);
 
-  // Real-time Room & Collaboration State
-  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
-  const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
-  const [userCount, setUserCount] = useState(1);
-  const [isServerAvailable, setIsServerAvailable] = useState<boolean | null>(null);
-  const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'saving' | 'offline'>('synced');
-  const lastLocalEditTimeRef = useRef<number>(Date.now());
-
-  // Unified persistent saving to Firestore and LocalStorage
-  const persistBoardChanges = useCallback((overrideStrokes?: any[], overrideBlocks?: any[]) => {
-    if (!currentRoomId) return;
-    lastLocalEditTimeRef.current = Date.now();
-    const snapshot = whiteboardRef.current?.getSnapshot();
-    const strokes = overrideStrokes !== undefined ? overrideStrokes : (snapshot?.strokes || []);
-    const codeBlocks = overrideBlocks !== undefined ? overrideBlocks : (snapshot?.codeBlocks || []);
-
-    collab.setLocalState(strokes, codeBlocks);
-    setCloudSyncStatus('saving');
-    saveBoardHybrid(currentRoomId, strokes, codeBlocks);
-    setTimeout(() => setCloudSyncStatus('synced'), 1000);
-  }, [currentRoomId]);
-
-  const handleCreateRoom = useCallback(async (): Promise<string> => {
-    let newRoomId = generateLocalRoomCode();
-
-    try {
-      const response = await safeFetchJson<{ id: string }>('/api/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: newRoomId, reset: true })
-      });
-
-      if (response.ok && response.data?.id) {
-        newRoomId = response.data.id;
-        setIsServerAvailable(true);
-      } else {
-        setIsServerAvailable(false);
-      }
-    } catch (_) {
-      setIsServerAvailable(false);
-    }
-
-    // 1. Instantly wipe board clean so new board starts 100% empty
-    whiteboardRef.current?.clearBoard();
-
-    // 2. Set room state
-    setCurrentRoomId(newRoomId);
-    setLastActiveRoomId(newRoomId);
-
-    // 3. Clear local cache and write empty initial state to Firestore
-    saveBoardHybrid(newRoomId, [], [], true);
-
-    // 4. Connect collaboration engine to this fresh room
-    collab.connect(newRoomId);
-
-    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(newRoomId)}`;
-    window.history.replaceState({ path: newUrl }, '', newUrl);
-
-    return newRoomId;
-  }, []);
-
-  const handleJoinRoom = useCallback(async (roomId: string): Promise<{ success: boolean; error?: string }> => {
-    const clean = roomId.trim().toUpperCase();
-    if (!clean) {
-      return { success: false, error: 'Пожалуйста, введите код доступа' };
-    }
-
-    // 1. Instantly clear canvas to ensure NO leftover drawings from previous boards remain
-    whiteboardRef.current?.clearBoard();
-
-    // 2. Set current room and update URL
-    setCurrentRoomId(clean);
-    setLastActiveRoomId(clean);
-    setIsWelcomeModalOpen(false);
-
-    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(clean)}`;
-    window.history.replaceState({ path: newUrl }, '', newUrl);
-
-    // 3. Connect to collaboration service with fresh room state
-    collab.connect(clean);
-
-    // 4. Fetch persistent cloud state from Firestore/cache for this specific room
-    const hybridRes = await loadBoardHybrid(clean);
-    if (hybridRes.data && (hybridRes.data.strokes.length > 0 || hybridRes.data.codeBlocks.length > 0)) {
-      whiteboardRef.current?.loadRoomState(hybridRes.data.strokes, hybridRes.data.codeBlocks);
-    } else {
-      whiteboardRef.current?.clearBoard();
-    }
-
-    // 5. Register with server if needed
-    safeFetchJson<{ exists: boolean }>(`/api/rooms/${encodeURIComponent(clean)}`).then(res => {
-      if (res.ok) {
-        setIsServerAvailable(true);
-        if (!res.data?.exists) {
-          safeFetchJson('/api/rooms', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code: clean })
-          });
-        }
-      } else {
-        setIsServerAvailable(false);
-      }
-    });
-
-    return { success: true };
-  }, []);
-
-  // Check URL or previous room on initial load
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    let targetRoom = params.get('room') || params.get('board');
-
-    if (!targetRoom) {
-      const lastRoom = getLastActiveRoomId();
-      if (lastRoom) {
-        targetRoom = lastRoom;
-        const newUrl = `${window.location.pathname}?room=${encodeURIComponent(lastRoom)}`;
-        window.history.replaceState({ path: newUrl }, '', newUrl);
-      }
-    }
-
-    if (targetRoom) {
-      const clean = targetRoom.trim().toUpperCase();
-      setCurrentRoomId(clean);
-      setLastActiveRoomId(clean);
-
-      // Instantly start with a clean board
-      whiteboardRef.current?.clearBoard();
-
-      // Load local cache if available for THIS room
-      const cached = getLocalBoard(clean);
-      if (cached && (cached.strokes.length > 0 || cached.codeBlocks.length > 0)) {
-        whiteboardRef.current?.loadRoomState(cached.strokes, cached.codeBlocks);
-      }
-
-      // Fetch persistent cloud state from Firestore
-      loadBoardHybrid(clean).then(res => {
-        if (res.data && (res.data.strokes.length > 0 || res.data.codeBlocks.length > 0)) {
-          whiteboardRef.current?.loadRoomState(res.data.strokes, res.data.codeBlocks);
-        } else if (!cached || (cached.strokes.length === 0 && cached.codeBlocks.length === 0)) {
-          whiteboardRef.current?.clearBoard();
-        }
-      });
-
-      collab.connect(clean);
-
-      safeFetchJson<{ exists: boolean }>(`/api/rooms/${encodeURIComponent(clean)}`).then(response => {
-        if (response.ok) {
-          setIsServerAvailable(true);
-        } else {
-          setIsServerAvailable(false);
-        }
-      });
-    } else {
-      whiteboardRef.current?.clearBoard();
-      setIsWelcomeModalOpen(true);
-    }
-  }, []);
-
-  // Real-time Firestore synchronization for cross-device updates
-  useEffect(() => {
-    if (!currentRoomId) return;
-
-    const unsubscribe = subscribeToBoardCloud(currentRoomId, (cloudBoard) => {
-      // Ignore if this is an echo of local pending writes to avoid race conditions
-      if (cloudBoard.hasPendingWrites) return;
-
-      // Ignore stale updates if local changes occurred after or at the same time as cloud timestamp
-      if (cloudBoard.updatedAt <= lastLocalEditTimeRef.current) return;
-
-      // Do not interrupt user if they are currently drawing or dragging on canvas
-      if (whiteboardRef.current?.isInteracting()) return;
-
+  // Auto-save local board state with light debounce
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const persistBoard = useCallback((overrideStrokes?: any[], overrideBlocks?: any[]) => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
       const snapshot = whiteboardRef.current?.getSnapshot();
-      if (!snapshot || cloudBoard.updatedAt <= 0) return;
+      const strokes = overrideStrokes !== undefined ? overrideStrokes : (snapshot?.strokes || []);
+      const codeBlocks = overrideBlocks !== undefined ? overrideBlocks : (snapshot?.codeBlocks || []);
+      saveLocalBoardState(strokes, codeBlocks);
+    }, 250);
+  }, []);
 
-      const localStrokesCount = snapshot.strokes.length;
-      const localBlocksCount = (snapshot.codeBlocks || []).length;
-      const cloudStrokesCount = cloudBoard.strokes.length;
-      const cloudBlocksCount = cloudBoard.codeBlocks.length;
-
-      // Guard against race condition: if local device has content, don't let empty cloud state wipe it
-      if (cloudStrokesCount === 0 && localStrokesCount > 0) return;
-      if (cloudBlocksCount === 0 && localBlocksCount > 0) return;
-
-      // If another device added items or modified the board
-      if (cloudStrokesCount !== localStrokesCount || cloudBlocksCount !== localBlocksCount || cloudBoard.updatedAt > lastLocalEditTimeRef.current) {
-        lastLocalEditTimeRef.current = cloudBoard.updatedAt;
-        whiteboardRef.current?.loadRoomState(cloudBoard.strokes, cloudBoard.codeBlocks);
-        collab.setLocalState(cloudBoard.strokes, cloudBoard.codeBlocks);
-      }
-    });
-
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [currentRoomId]);
-
-  // Listen to collaboration events
+  // Restore local board state on initial mount
   useEffect(() => {
-    const unsubscribe = collab.subscribe((event) => {
-      switch (event.type) {
-        case 'init': {
-          const incomingStrokes = Array.isArray(event.data.strokes) ? event.data.strokes : [];
-          const incomingBlocks = Array.isArray(event.data.codeBlocks) ? event.data.codeBlocks : [];
-
-          const snapshot = whiteboardRef.current?.getSnapshot();
-          const localHasItems = snapshot && (snapshot.strokes.length > 0 || (snapshot.codeBlocks || []).length > 0);
-
-          if (incomingStrokes.length > 0 || incomingBlocks.length > 0) {
-            if (!localHasItems || !whiteboardRef.current?.isInteracting()) {
-              whiteboardRef.current?.loadRoomState(incomingStrokes, incomingBlocks);
-              collab.setLocalState(incomingStrokes, incomingBlocks);
-            }
-          } else if (localHasItems && snapshot) {
-            // Room is empty on server, push our local state to it
-            collab.sendStrokesUpdate(snapshot.strokes);
-            (snapshot.codeBlocks || []).forEach(b => collab.sendCodeBlockCreate(b));
-          }
-          setUserCount(event.data.usersCount || 1);
-          break;
-        }
-        case 'stroke_added': {
-          whiteboardRef.current?.applyRemoteStroke(event.data);
-          break;
-        }
-        case 'live_stroke': {
-          if (event.data?.userId && event.data?.stroke) {
-            whiteboardRef.current?.applyRemoteLiveStroke(event.data.userId, event.data.stroke);
-          }
-          break;
-        }
-        case 'live_stroke_end': {
-          if (event.data?.userId) {
-            whiteboardRef.current?.clearRemoteLiveStroke(event.data.userId);
-          }
-          break;
-        }
-        case 'strokes_updated': {
-          if (!whiteboardRef.current?.isInteracting()) {
-            whiteboardRef.current?.applyRemoteStrokes(event.data);
-          }
-          break;
-        }
-        case 'code_block_created': {
-          whiteboardRef.current?.applyRemoteCodeBlockCreate(event.data);
-          break;
-        }
-        case 'code_block_updated': {
-          whiteboardRef.current?.applyRemoteCodeBlockUpdate(event.data);
-          break;
-        }
-        case 'code_block_deleted': {
-          whiteboardRef.current?.applyRemoteCodeBlockDelete(event.data);
-          break;
-        }
-        case 'users_count': {
-          setUserCount(event.data);
-          break;
-        }
-        case 'cursors_updated': {
-          setRemoteCursors(event.data);
-          break;
-        }
-        case 'connection_status': {
-          setIsServerAvailable(event.data === 'online');
-          break;
-        }
-      }
-    });
-
-    return () => unsubscribe();
+    const saved = loadLocalBoardState();
+    if (saved && (saved.strokes.length > 0 || saved.codeBlocks.length > 0)) {
+      whiteboardRef.current?.loadBoardState(saved.strokes, saved.codeBlocks);
+    }
   }, []);
 
   const handleUndo = useCallback(() => setUndoTrigger(prev => prev + 1), []);
@@ -525,10 +234,9 @@ const App: React.FC = () => {
 
       const lines = summaryText.split('\n');
       const regularFontSize = 12;
-      const titleFontSize = 14; // +2pt larger as requested
+      const titleFontSize = 14;
       
       lines.forEach((line) => {
-          // Remove Markdown artifacts
           const cleanLine = line.replace(/\*\*/g, '').replace(/^\*\s*/, '').replace(/^\d+\.\s*/, '').trim();
           if (!cleanLine) {
               cursorY += 5;
@@ -551,21 +259,9 @@ const App: React.FC = () => {
               checkNewPage(15);
               doc.setFontSize(regularFontSize);
               doc.setFont('Roboto', 'bold');
-              doc.setTextColor(80, 80, 80);
-              doc.text("Условие:", margin, cursorY);
+              doc.setTextColor(50, 50, 50);
+              doc.text(cleanLine, margin, cursorY);
               cursorY += 8;
-              
-              const conditionBody = cleanLine.substring(cleanLine.toLowerCase().indexOf('условие:') + 8).trim();
-              if (conditionBody) {
-                  doc.setFont('Roboto', 'normal');
-                  doc.setTextColor(0, 0, 0);
-                  const splitBody = doc.splitTextToSize(conditionBody, pageWidth - (margin * 2 + 5));
-                  splitBody.forEach((bl: string) => {
-                      checkNewPage(8);
-                      doc.text(bl, margin + 5, cursorY);
-                      cursorY += 8;
-                  });
-              }
           }
           else {
               doc.setFontSize(regularFontSize);
@@ -623,10 +319,9 @@ const App: React.FC = () => {
   const lastCopySourceRef = useRef<'board' | 'external'>('external');
   const isBoardCopyingRef = useRef<boolean>(false);
 
-  // Keyboard Shortcuts (Layout-Independent)
+  // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Toggle UI visibility with Tab key
       if (e.key === 'Tab' || e.code === 'Tab') {
         if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
           e.preventDefault();
@@ -654,7 +349,6 @@ const App: React.FC = () => {
                   }
                   break;
               }
-              // Ctrl/Cmd + V is handled cleanly by the unified paste listener below
           }
       } else {
           switch (code) {
@@ -737,12 +431,10 @@ const App: React.FC = () => {
   const handleClear = () => { 
     if (window.confirm("Очистить доску?")) {
       whiteboardRef.current?.clearBoard();
-      if (currentRoomId) {
-        collab.sendStrokesUpdate([]);
-        saveBoardHybrid(currentRoomId, [], [], true);
-      }
+      clearLocalBoardState();
     }
   };
+
   const handleSave = () => {
     if (whiteboardRef.current) {
       const data = whiteboardRef.current.getSnapshot();
@@ -755,7 +447,15 @@ const App: React.FC = () => {
 
   const handleOpen = (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => { try { whiteboardRef.current?.restoreSnapshot(JSON.parse(e.target?.result as string)); } catch (err) { alert("Ошибка загрузки"); } };
+    reader.onload = (e) => { 
+      try { 
+        const parsed = JSON.parse(e.target?.result as string);
+        whiteboardRef.current?.restoreSnapshot(parsed);
+        persistBoard(parsed.strokes, parsed.codeBlocks);
+      } catch (err) { 
+        alert("Ошибка загрузки файла"); 
+      } 
+    };
     reader.readAsText(file);
   };
 
@@ -769,11 +469,6 @@ const App: React.FC = () => {
         isDarkMode={isDarkMode}
         onToggleDarkMode={handleToggleDarkMode}
         isVisible={isUIVisible}
-        roomId={currentRoomId}
-        userCount={userCount}
-        isServerOnline={isServerAvailable}
-        cloudStatus={cloudSyncStatus}
-        onOpenRoomModal={() => setIsWelcomeModalOpen(true)}
       />
       <Toolbar 
         currentTool={currentTool} 
@@ -856,53 +551,23 @@ const App: React.FC = () => {
         onDrawStart={handleDrawStart} 
         onZoomChange={setZoom} 
         onShapeSelect={handleShapeSelect}
-        onStrokeAdded={(stroke) => {
-          lastLocalEditTimeRef.current = Date.now();
-          collab.sendStroke(stroke);
-          persistBoardChanges();
-        }}
-        onLiveStroke={(stroke) => {
-          collab.sendLiveStroke(stroke);
-        }}
-        onLiveStrokeEnd={() => {
-          collab.sendLiveStrokeEnd();
-        }}
-        onStrokesChanged={(strokes) => {
-          lastLocalEditTimeRef.current = Date.now();
-          collab.setLocalState(strokes);
-          collab.sendStrokesUpdate(strokes);
-          persistBoardChanges(strokes);
-        }}
+        onStrokeAdded={() => persistBoard()}
+        onStrokesChanged={(strokes) => persistBoard(strokes)}
         onCodeBlockCreated={(block) => {
-          collab.sendCodeBlockCreate(block);
           const currentBlocks = whiteboardRef.current?.getSnapshot()?.codeBlocks || [];
           const updatedBlocks = [...currentBlocks.filter(b => b.id !== block.id), block];
-          persistBoardChanges(undefined, updatedBlocks);
+          persistBoard(undefined, updatedBlocks);
         }}
         onCodeBlockUpdated={(block) => {
-          collab.sendCodeBlockUpdate(block);
           const currentBlocks = whiteboardRef.current?.getSnapshot()?.codeBlocks || [];
           const updatedBlocks = currentBlocks.map(b => b.id === block.id ? { ...b, ...block } : b);
-          persistBoardChanges(undefined, updatedBlocks);
+          persistBoard(undefined, updatedBlocks);
         }}
         onCodeBlockDeleted={(blockId) => {
-          collab.sendCodeBlockDelete(blockId);
           const currentBlocks = whiteboardRef.current?.getSnapshot()?.codeBlocks || [];
           const updatedBlocks = currentBlocks.filter(b => b.id !== blockId);
-          persistBoardChanges(undefined, updatedBlocks);
+          persistBoard(undefined, updatedBlocks);
         }}
-        onCursorMove={(x, y) => collab.sendCursor(x, y)}
-        remoteCursors={remoteCursors}
-      />
-
-      <RoomWelcomeModal
-        isOpen={isWelcomeModalOpen}
-        onClose={() => setIsWelcomeModalOpen(false)}
-        canClose={!!currentRoomId}
-        currentRoomId={currentRoomId}
-        onCreateRoom={handleCreateRoom}
-        onJoinRoom={handleJoinRoom}
-        isDarkMode={isDarkMode}
       />
     </div>
   );

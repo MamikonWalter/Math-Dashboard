@@ -19,14 +19,10 @@ interface WhiteboardProps {
   onZoomChange?: (zoom: number) => void;
   onShapeSelect?: (size: number | null) => void;
   onStrokeAdded?: (stroke: Stroke) => void;
-  onLiveStroke?: (stroke: Stroke) => void;
-  onLiveStrokeEnd?: () => void;
   onStrokesChanged?: (strokes: Stroke[]) => void;
   onCodeBlockCreated?: (block: CodeBlockItem) => void;
   onCodeBlockUpdated?: (block: CodeBlockItem) => void;
   onCodeBlockDeleted?: (blockId: string) => void;
-  onCursorMove?: (worldX: number, worldY: number) => void;
-  remoteCursors?: { userId: string; userName: string; color: string; x: number; y: number }[];
 }
 
 interface TextInputState {
@@ -53,19 +49,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   onZoomChange,
   onShapeSelect,
   onStrokeAdded,
-  onLiveStroke,
-  onLiveStrokeEnd,
   onStrokesChanged,
   onCodeBlockCreated,
   onCodeBlockUpdated,
   onCodeBlockDeleted,
-  onCursorMove,
-  remoteCursors = []
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
-  const remoteLiveStrokesRef = useRef<Map<string, Stroke>>(new Map());
   
   // State Refs
   const strokesRef = useRef<Stroke[]>([]);
@@ -76,6 +67,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const currentStrokeRef = useRef<Stroke | null>(null);
   const lastMousePosRef = useRef<Point | null>(null);
   const hasErasedRef = useRef(false);
+  const eraserTrailRef = useRef<Point[]>([]);
+  const eraserTrailOpacityRef = useRef<number>(0);
+  const eraserCurrentPosRef = useRef<Point | null>(null);
+  const eraserFadeAnimRef = useRef<number | null>(null);
   
   // Selection & Dragging Refs
   const selectedIndicesRef = useRef<Set<number>>(new Set());
@@ -741,12 +736,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         render();
       }
     },
-    loadRoomState: (strokes: Stroke[], blocks: CodeBlockItem[]) => {
-      // Never wipe or clobber if user is actively in the middle of a gesture
-      if (isDrawingRef.current || isDraggingSelectionRef.current || isPanningRef.current || !!isRotatingRef.current || !!isResizingShapeRef.current || isSelectingRef.current) {
-        return;
-      }
-      remoteLiveStrokesRef.current.clear();
+    loadBoardState: (strokes: Stroke[], blocks: CodeBlockItem[]) => {
       const nextStrokes = (Array.isArray(strokes) ? strokes : []).map(s => ({
         ...s,
         id: s.id || `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -773,33 +763,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       onHistoryChange(false, false);
       render();
     },
-    applyRemoteStroke: (stroke: Stroke) => {
-      remoteLiveStrokesRef.current.clear();
-      // Ensure stroke has an ID and avoid duplicate
-      const sId = stroke.id || `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const newStroke = { ...stroke, id: sId, updatedAt: stroke.updatedAt || Date.now() };
-      if (!strokesRef.current.some(s => s.id && s.id === sId)) {
-        strokesRef.current = [...strokesRef.current, newStroke];
-      }
-      if (stroke.tool === 'image' && stroke.imageUrl && !imageCache.current[stroke.imageUrl]) {
-        const img = new Image();
-        img.src = stroke.imageUrl;
-        img.onload = () => render();
-        imageCache.current[stroke.imageUrl] = img;
-      }
-      render();
-    },
-    applyRemoteStrokes: (strokes: Stroke[]) => {
-      // If user is currently dragging or drawing, do not disrupt active gesture
-      if (isDrawingRef.current || isDraggingSelectionRef.current || !!isRotatingRef.current || !!isResizingShapeRef.current) {
-        return;
-      }
-      remoteLiveStrokesRef.current.clear();
-      strokesRef.current = (Array.isArray(strokes) ? strokes : []).map(s => ({
+    loadRoomState: (strokes: Stroke[], blocks: CodeBlockItem[]) => {
+      const nextStrokes = (Array.isArray(strokes) ? strokes : []).map(s => ({
         ...s,
         id: s.id || `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         updatedAt: s.updatedAt || Date.now()
       }));
+      strokesRef.current = nextStrokes;
+      const codeBlocksList = Array.isArray(blocks) ? blocks : [];
+      codeBlocksRef.current = codeBlocksList;
+      setCodeBlocks(codeBlocksList);
       strokesRef.current.forEach(s => {
         if (s.tool === 'image' && s.imageUrl && !imageCache.current[s.imageUrl]) {
           const img = new Image();
@@ -808,38 +781,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           imageCache.current[s.imageUrl] = img;
         }
       });
+      historyRef.current = [{
+        strokes: deepCloneStrokes(strokesRef.current),
+        codeBlocks: JSON.parse(JSON.stringify(codeBlocksList))
+      }];
+      historyStepRef.current = 0;
+      selectedIndicesRef.current.clear();
+      onHistoryChange(false, false);
       render();
-    },
-    applyRemoteLiveStroke: (userId: string, stroke: Stroke) => {
-      remoteLiveStrokesRef.current.set(userId, stroke);
-      render();
-    },
-    clearRemoteLiveStroke: (userId: string) => {
-      if (remoteLiveStrokesRef.current.has(userId)) {
-        remoteLiveStrokesRef.current.delete(userId);
-        render();
-      }
-    },
-    applyRemoteCodeBlockCreate: (block: CodeBlockItem) => {
-      setCodeBlocks(prev => {
-        const next = [...prev.filter(b => b.id !== block.id), block];
-        codeBlocksRef.current = next;
-        return next;
-      });
-    },
-    applyRemoteCodeBlockUpdate: (block: CodeBlockItem) => {
-      setCodeBlocks(prev => {
-        const next = prev.map(b => b.id === block.id ? { ...b, ...block } : b);
-        codeBlocksRef.current = next;
-        return next;
-      });
-    },
-    applyRemoteCodeBlockDelete: (blockId: string) => {
-      setCodeBlocks(prev => {
-        const next = prev.filter(b => b.id !== blockId);
-        codeBlocksRef.current = next;
-        return next;
-      });
     },
     clearBoard: () => {
       strokesRef.current = [];
@@ -1009,9 +958,120 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
              !!isRotatingRef.current || 
              !!isResizingShapeRef.current || 
              isSelectingRef.current || 
-             !!isResizingTextRef.current;
+             !!isResizingTextRef.current ||
+             eraserTrailOpacityRef.current > 0;
     }
   }));
+
+  // Trims the eraser trail so it never exceeds maxLength.
+  // The tail (oldest point) slides forward along its exact recorded trajectory,
+  // preventing the trail from growing beyond the maximum length.
+  const trimTrailToMaxLength = (trail: Point[], maxLength: number) => {
+    if (trail.length < 2) return;
+
+    let totalLength = 0;
+    for (let i = 0; i < trail.length - 1; i++) {
+      totalLength += Math.hypot(trail[i + 1].x - trail[i].x, trail[i + 1].y - trail[i].y);
+    }
+
+    let excess = totalLength - maxLength;
+    if (excess <= 0) return;
+
+    while (excess > 0 && trail.length >= 2) {
+      const segDist = Math.hypot(trail[1].x - trail[0].x, trail[1].y - trail[0].y);
+      if (segDist <= 0.0001) {
+        trail.shift();
+        continue;
+      }
+      if (segDist <= excess) {
+        excess -= segDist;
+        trail.shift();
+      } else {
+        const ratio = excess / segDist;
+        trail[0] = {
+          x: trail[0].x + (trail[1].x - trail[0].x) * ratio,
+          y: trail[0].y + (trail[1].y - trail[0].y) * ratio
+        };
+        excess = 0;
+        break;
+      }
+    }
+  };
+
+  // Render the uniform semi-transparent gray eraser trail and cursor head
+  const drawEraserTrail = (ctx: CanvasRenderingContext2D) => {
+    const scale = scaleRef.current || 1;
+    const trail = eraserTrailRef.current;
+    const opacity = eraserTrailOpacityRef.current;
+
+    // 1. Single-tone uniform semi-transparent gray trail (no extra colors or layered gradients)
+    if (trail.length > 0 && opacity > 0.005) {
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      const grayAlpha = (isDarkMode ? 0.32 : 0.26) * opacity;
+      const grayTone = isDarkMode 
+        ? `rgba(212, 212, 216, ${grayAlpha})` 
+        : `rgba(100, 116, 139, ${grayAlpha})`;
+
+      ctx.strokeStyle = grayTone;
+      ctx.fillStyle = grayTone;
+      ctx.lineWidth = eraserWidth;
+
+      if (trail.length === 1) {
+        ctx.beginPath();
+        ctx.arc(trail[0].x, trail[0].y, Math.max(1, eraserWidth / 2), 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(trail[0].x, trail[0].y);
+        for (let i = 1; i < trail.length; i++) {
+          ctx.lineTo(trail[i].x, trail[i].y);
+        }
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    // 2. Active eraser head circle (when tool is eraser and cursor is on canvas)
+    if (tool === 'eraser' && eraserCurrentPosRef.current) {
+      const pos = eraserCurrentPosRef.current;
+      const radius = eraserWidth / 2;
+      ctx.save();
+
+      // Translucent circular body matching the single-tone gray
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = isDarkMode
+        ? (isDrawingRef.current ? 'rgba(212, 212, 216, 0.15)' : 'rgba(212, 212, 216, 0.08)')
+        : (isDrawingRef.current ? 'rgba(100, 116, 139, 0.15)' : 'rgba(100, 116, 139, 0.08)');
+      ctx.fill();
+
+      // Perimeter stroke in matching single-tone gray
+      ctx.lineWidth = 1.5 / scale;
+      const ringColor = isDarkMode ? 'rgba(212, 212, 216, 0.55)' : 'rgba(100, 116, 139, 0.55)';
+      ctx.strokeStyle = ringColor;
+      if (!isDrawingRef.current) {
+        ctx.setLineDash([3 / scale, 3 / scale]);
+      }
+      ctx.stroke();
+      if (!isDrawingRef.current) {
+        ctx.setLineDash([]);
+      }
+
+      // Center precision point (only while hovering before drawing, in matching gray tone)
+      if (!isDrawingRef.current) {
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 2 / scale, 0, Math.PI * 2);
+        ctx.fillStyle = ringColor;
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+  };
 
   // --- Standard Rendering Loop ---
   const render = useCallback(() => {
@@ -1162,13 +1222,67 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         ctx.strokeRect(x, y, w, h);
         ctx.restore();
     }
-    // Draw in-progress remote live strokes from other participants in real time
-    remoteLiveStrokesRef.current.forEach((remoteStroke) => {
-      drawStrokeOnCtx(ctx, remoteStroke);
-    });
-
     if (currentStrokeRef.current) drawStrokeOnCtx(ctx, currentStrokeRef.current);
-  }, [showGrid, isDarkMode]);
+
+    // Draw active eraser trail and circular head
+    drawEraserTrail(ctx);
+  }, [showGrid, isDarkMode, tool, eraserWidth]);
+
+  // Smoothly fade out the eraser trail upon release
+  const startEraserTrailFade = useCallback(() => {
+    if (eraserFadeAnimRef.current) {
+      cancelAnimationFrame(eraserFadeAnimRef.current);
+      eraserFadeAnimRef.current = null;
+    }
+
+    if (eraserTrailRef.current.length === 0) {
+      eraserTrailOpacityRef.current = 0;
+      return;
+    }
+
+    const fadeDuration = 240; // ms
+    const startTime = performance.now();
+    const initialOpacity = eraserTrailOpacityRef.current || 1;
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / fadeDuration);
+      // ease-out cubic
+      const ease = 1 - Math.pow(1 - progress, 3);
+      eraserTrailOpacityRef.current = Math.max(0, initialOpacity * (1 - ease));
+
+      render();
+
+      if (progress < 1 && eraserTrailOpacityRef.current > 0.005) {
+        eraserFadeAnimRef.current = requestAnimationFrame(step);
+      } else {
+        eraserTrailOpacityRef.current = 0;
+        eraserTrailRef.current = [];
+        eraserFadeAnimRef.current = null;
+        render();
+      }
+    };
+
+    eraserFadeAnimRef.current = requestAnimationFrame(step);
+  }, [render]);
+
+  // Cleanup animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (eraserFadeAnimRef.current) {
+        cancelAnimationFrame(eraserFadeAnimRef.current);
+      }
+    };
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    eraserCurrentPosRef.current = null;
+    if (tool === 'eraser' && isDrawingRef.current) {
+      endDrawing();
+    } else {
+      render();
+    }
+  }, [tool, render]);
 
   // Re-render when dark mode or grid changes
   useEffect(() => {
@@ -1258,8 +1372,16 @@ print(f"solve({val}) =", solve(val))
     if (tool === 'eraser') {
         isDrawingRef.current = true;
         hasErasedRef.current = false;
+        if (eraserFadeAnimRef.current) {
+            cancelAnimationFrame(eraserFadeAnimRef.current);
+            eraserFadeAnimRef.current = null;
+        }
+        eraserTrailOpacityRef.current = 1;
+        eraserTrailRef.current = [worldPos];
+        eraserCurrentPosRef.current = worldPos;
         onDrawStart();
         performErase(worldPos);
+        render();
         return;
     }
 
@@ -1517,9 +1639,38 @@ print(f"solve({val}) =", solve(val))
         setActiveTextInput(prev => prev ? { ...prev, width: Math.max(50, screenToWorld(coords.x, coords.y).x - activeTextInput.x) } : null);
         return;
     }
-    if (tool === 'eraser' && isDrawingRef.current) {
-        performErase(screenToWorld(coords.x, coords.y));
-        return;
+    if (tool === 'eraser') {
+        eraserCurrentPosRef.current = worldPos;
+        if (isDrawingRef.current) {
+            const trail = eraserTrailRef.current;
+            const lastPt = trail.length > 0 ? trail[trail.length - 1] : null;
+            if (!lastPt || Math.hypot(worldPos.x - lastPt.x, worldPos.y - lastPt.y) >= 2) {
+                if (lastPt) {
+                    const dist = Math.hypot(worldPos.x - lastPt.x, worldPos.y - lastPt.y);
+                    const stepSize = Math.max(6, eraserWidth / 3);
+                    const steps = Math.floor(dist / stepSize);
+                    for (let s = 1; s <= steps; s++) {
+                        const t = s / (steps + 1);
+                        performErase({
+                            x: lastPt.x + (worldPos.x - lastPt.x) * t,
+                            y: lastPt.y + (worldPos.y - lastPt.y) * t
+                        });
+                    }
+                }
+                trail.push(worldPos);
+
+                // Enforce maximum length limit: tail follows its exact trajectory
+                const scale = scaleRef.current || 1;
+                const maxTrailLength = Math.max(180 / scale, eraserWidth * 3.5);
+                trimTrailToMaxLength(trail, maxTrailLength);
+            }
+            performErase(worldPos);
+            render();
+            return;
+        } else {
+            render();
+            return;
+        }
     }
     if (isSelectingRef.current) {
         selectionCurrentRef.current = screenToWorld(coords.x, coords.y);
@@ -1547,9 +1698,6 @@ print(f"solve({val}) =", solve(val))
              currentStrokeRef.current.points = [startPos, targetPos];
         } else currentStrokeRef.current.points.push(worldPos);
         render();
-        if (onLiveStroke) {
-          onLiveStroke(currentStrokeRef.current);
-        }
     }
 
     // Hover cursor feedback in cursor mode when not interacting
@@ -1623,6 +1771,7 @@ print(f"solve({val}) =", solve(val))
     if (tool === 'eraser' && isDrawingRef.current) {
         isDrawingRef.current = false;
         if (hasErasedRef.current) pushHistory();
+        startEraserTrailFade();
         return;
     }
     if (isSelectingRef.current && selectionStartRef.current && selectionCurrentRef.current) {
@@ -1655,7 +1804,6 @@ print(f"solve({val}) =", solve(val))
         };
         strokesRef.current = [...strokesRef.current, finishedStroke];
         currentStrokeRef.current = null;
-        if (onLiveStrokeEnd) onLiveStrokeEnd();
         if (onStrokeAdded) onStrokeAdded(finishedStroke);
         pushHistory(); 
         render();
@@ -1745,20 +1893,70 @@ print(f"solve({val}) =", solve(val))
 
   const performErase = (p: Point) => {
       let erased = false;
+      const radius = eraserWidth / 2;
+
       for (let i = strokesRef.current.length - 1; i >= 0; i--) {
           const s = strokesRef.current[i];
-          if (s.tool === 'image') continue; 
-
-          const radius = eraserWidth / 2;
           let hit = false;
-          if (shapeTools.includes(s.tool) || s.tool === 'text') hit = hitTest(p, s);
-          else if (s.tool === 'dotted-line' && s.points.length >= 2) hit = distanceToSegment(p, s.points[0], s.points[s.points.length-1]) < radius + s.width;
-          else if (s.tool === 'pen') {
-              for (let j = 0; j < s.points.length - 1; j++) if (distanceToSegment(p, s.points[j], s.points[j+1]) < radius + s.width) { hit = true; break; }
+
+          if (shapeTools.includes(s.tool) || s.tool === 'text' || s.tool === 'image') {
+              hit = hitTest(p, s);
+          } else if (s.tool === 'dotted-line') {
+              if (s.points.length === 0) {
+                  hit = false;
+              } else if (s.points.length === 1) {
+                  hit = Math.hypot(p.x - s.points[0].x, p.y - s.points[0].y) <= radius + Math.max(s.width / 2, 6);
+              } else {
+                  const rot = s.rotation || 0;
+                  let checkP = p;
+                  if (rot !== 0) {
+                      const bounds = getBoundingBox(s);
+                      const center = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+                      const dx = p.x - center.x;
+                      const dy = p.y - center.y;
+                      const cos = Math.cos(-rot);
+                      const sin = Math.sin(-rot);
+                      checkP = { x: center.x + (dx * cos - dy * sin), y: center.y + (dx * sin + dy * cos) };
+                  }
+                  hit = distanceToSegment(checkP, s.points[0], s.points[s.points.length - 1]) <= radius + Math.max(s.width / 2, 6);
+              }
+          } else if (s.tool === 'pen') {
+              if (s.points.length === 0) {
+                  hit = false;
+              } else if (s.points.length === 1) {
+                  hit = Math.hypot(p.x - s.points[0].x, p.y - s.points[0].y) <= radius + Math.max(s.width / 2, 6);
+              } else {
+                  const rot = s.rotation || 0;
+                  let checkP = p;
+                  if (rot !== 0) {
+                      const bounds = getBoundingBox(s);
+                      const center = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+                      const dx = p.x - center.x;
+                      const dy = p.y - center.y;
+                      const cos = Math.cos(-rot);
+                      const sin = Math.sin(-rot);
+                      checkP = { x: center.x + (dx * cos - dy * sin), y: center.y + (dx * sin + dy * cos) };
+                  }
+                  const threshold = radius + Math.max(s.width / 2, 6);
+                  for (let j = 0; j < s.points.length - 1; j++) {
+                      if (distanceToSegment(checkP, s.points[j], s.points[j + 1]) <= threshold) {
+                          hit = true;
+                          break;
+                      }
+                  }
+              }
           }
-          if (hit) { strokesRef.current.splice(i, 1); erased = true; }
+
+          if (hit) {
+              strokesRef.current.splice(i, 1);
+              erased = true;
+          }
       }
-      if (erased) { hasErasedRef.current = true; render(); }
+
+      if (erased) {
+          hasErasedRef.current = true;
+          render();
+      }
   };
 
   const getCoords = (e: any): Point => {
@@ -1968,7 +2166,20 @@ print(f"solve({val}) =", solve(val))
         }
       }}
     >
-      <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={move} onMouseUp={endDrawing} onMouseLeave={endDrawing} onTouchStart={startDrawing} onTouchMove={move} onTouchEnd={endDrawing} className="block touch-none" />
+      <canvas 
+        ref={canvasRef} 
+        onMouseDown={startDrawing} 
+        onMouseMove={move} 
+        onMouseUp={endDrawing} 
+        onMouseLeave={handleMouseLeave} 
+        onTouchStart={startDrawing} 
+        onTouchMove={move} 
+        onTouchEnd={() => { 
+          eraserCurrentPosRef.current = null; 
+          endDrawing(); 
+        }} 
+        className="block touch-none" 
+      />
       
       {/* Code Blocks Overlays */}
       {codeBlocks.map((block) => {
@@ -2033,37 +2244,7 @@ print(f"solve({val}) =", solve(val))
         );
       })}
 
-      {/* Collaborative Remote User Cursors */}
-      {remoteCursors?.map((cursor) => {
-        const screenPos = worldToScreen(cursor.x, cursor.y);
-        return (
-          <div
-            key={cursor.userId}
-            className="absolute pointer-events-none z-40 transition-transform duration-75 ease-out"
-            style={{
-              transform: `translate(${screenPos.x}px, ${screenPos.y}px)`
-            }}
-          >
-            <svg
-              className="w-5 h-5 -translate-x-1 -translate-y-1 drop-shadow-md"
-              viewBox="0 0 24 24"
-              fill={cursor.color}
-            >
-              <path
-                d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.54.35-.85L6.35 2.86a.5.5 0 0 0-.85.35Z"
-                stroke="#ffffff"
-                strokeWidth="1.5"
-              />
-            </svg>
-            <div
-              className="px-2 py-0.5 rounded-full text-[11px] font-medium text-white shadow-md whitespace-nowrap ml-3 -mt-2"
-              style={{ backgroundColor: cursor.color }}
-            >
-              {cursor.userName}
-            </div>
-          </div>
-        );
-      })}
+
 
       {activeTextInput && (
           <div className="absolute z-40 pointer-events-none" style={{ left: inputScreenPos.x, top: inputScreenPos.y }}>

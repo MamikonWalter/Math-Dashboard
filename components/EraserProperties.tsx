@@ -36,11 +36,17 @@ const EraserProperties: React.FC<EraserPropertiesProps> = ({ size, setSize, isVi
         {/* Visual preview of size */}
         <div className="flex justify-center mt-2 h-12 items-center">
             <div 
-                className={`rounded-full border transition-colors ${
-                  isDarkMode ? 'bg-zinc-700 border-zinc-600' : 'bg-gray-200 border-gray-300'
+                className={`rounded-full border flex items-center justify-center transition-all ${
+                  isDarkMode 
+                    ? 'bg-zinc-400/20 border-zinc-400/50' 
+                    : 'bg-slate-500/20 border-slate-500/50'
                 }`}
                 style={{ width: Math.min(size, 40), height: Math.min(size, 40) }}
-            />
+            >
+              <div 
+                className={`w-1.5 h-1.5 rounded-full ${isDarkMode ? 'bg-zinc-400/70' : 'bg-slate-500/70'}`} 
+              />
+            </div>
         </div>
       </div>
     </div>
