@@ -600,22 +600,19 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
     const codeFontSize = Math.round(12 * dynamicScale);
     const lineH = Math.round(19 * dynamicScale);
-    const gutterW = Math.max(28, Math.round(38 * dynamicScale));
-    const headerH = Math.max(28, Math.round(36 * dynamicScale));
+    const gutterW = Math.max(26, Math.round(36 * dynamicScale));
+    const headerH = Math.max(22, Math.round(26 * dynamicScale));
 
     ctx.save();
-    // Card background
+    // Card background (borderless)
     ctx.beginPath();
     if (typeof (ctx as any).roundRect === 'function') {
       (ctx as any).roundRect(x, y, w, h, r);
     } else {
       ctx.rect(x, y, w, h);
     }
-    ctx.fillStyle = isDark ? '#18181b' : '#ffffff';
+    ctx.fillStyle = isDark ? '#141518' : '#ffffff';
     ctx.fill();
-    ctx.strokeStyle = isDark ? '#3f3f46' : '#cbd5e1';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
 
     // Header background
     ctx.save();
@@ -627,14 +624,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     }
     ctx.fillStyle = isDark ? '#1c1d22' : '#f1f5f9';
     ctx.fill();
-    ctx.strokeStyle = isDark ? '#27272a' : '#e2e8f0';
-    ctx.stroke();
 
     // macOS Window control dots
-    const dotRadius = Math.max(3.5, Math.min(6, 4.5 * dynamicScale));
+    const dotRadius = Math.max(3, Math.min(5, 4 * dynamicScale));
     const dotY = y + headerH / 2;
     const dotStartX = x + 12;
-    const dotGap = Math.max(9, 13 * dynamicScale);
+    const dotGap = Math.max(8, 12 * dynamicScale);
 
     // Red dot
     ctx.beginPath();
@@ -653,13 +648,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     ctx.arc(dotStartX + dotGap * 2, dotY, dotRadius, 0, Math.PI * 2);
     ctx.fillStyle = '#27c93f';
     ctx.fill();
-
-    // Header title
-    const headerTitleSize = Math.max(10, Math.round(11.5 * dynamicScale));
-    ctx.font = `600 ${headerTitleSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
-    ctx.fillStyle = isDark ? '#d4d4d8' : '#334155';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(block.title || 'main.py', dotStartX + dotGap * 3 + 4, dotY);
     ctx.restore();
 
     if (!block.isMinimized) {
@@ -1330,9 +1318,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             id: 'cb_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
             x: Math.round(worldPos.x),
             y: Math.round(worldPos.y),
-            width: 500,
-            height: 260,
-            title: 'main.py',
+            width: 420,
+            height: 180,
+            title: '',
             code: '',
             output: undefined,
             isMinimized: false

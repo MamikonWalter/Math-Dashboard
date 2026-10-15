@@ -1,15 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { 
-  Copy, 
-  Check, 
-  Trash2, 
-  ChevronDown, 
-  ChevronUp, 
-  Maximize2,
-  Minimize2,
-  Edit2,
-  FileCode2
-} from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Copy, Check } from 'lucide-react';
 import { CodeBlockItem } from '../types';
 
 interface PythonCodeBlockProps {
@@ -25,63 +15,6 @@ interface PythonCodeBlockProps {
   onFocus: () => void;
 }
 
-// Preset Python examples for math & algorithms
-const PYTHON_PRESETS = [
-  {
-    name: 'Алгоритм Евклида (НОД)',
-    code: `# Поиск наибольшего общего делителя (НОД)
-def gcd(a: int, b: int) -> int:
-    while b != 0:
-        a, b = b, a % b
-    return a
-
-x, y = 1071, 462
-print(f"НОД({x}, {y}) = {gcd(x, y)}")
-`
-  },
-  {
-    name: 'Квадратное уравнение',
-    code: `import math
-
-def solve_quadratic(a: float, b: float, c: float):
-    d = b**2 - 4 * a * c
-    if d > 0:
-        x1 = (-b + math.sqrt(d)) / (2 * a)
-        x2 = (-b - math.sqrt(d)) / (2 * a)
-        return x1, x2
-    elif d == 0:
-        return -b / (2 * a)
-    return None
-
-roots = solve_quadratic(1, -5, 6)
-print("Корни уравнения:", roots)
-`
-  },
-  {
-    name: 'Генерация списков (List Comprehension)',
-    code: `# Генераторы списков и срезы в Python
-squares = [x**2 for x in range(1, 11)]
-evens = [x for x in squares if x % 2 == 0]
-
-matrix = [[i * j for j in range(1, 4)] for i in range(1, 4)]
-reversed_list = squares[::-1]
-`
-  },
-  {
-    name: 'Числа Фибоначчи с мемоизацией',
-    code: `from functools import lru_cache
-
-@lru_cache(maxsize=None)
-def fib(n: int) -> int:
-    if n < 2:
-        return n
-    return fib(n - 1) + fib(n - 2)
-
-first_10 = [fib(i) for i in range(10)]
-`
-  }
-];
-
 export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
   block,
   scale,
@@ -95,19 +28,10 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
   onFocus
 }) => {
   const [copied, setCopied] = useState(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [titleInput, setTitleInput] = useState(block.title || 'main.py');
-  const [showPresets, setShowPresets] = useState(false);
   const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
-  const titleInputRef = useRef<HTMLInputElement>(null);
-
-  // Sync title input with block prop
-  useEffect(() => {
-    setTitleInput(block.title || 'main.py');
-  }, [block.title]);
 
   // Synchronize scrolling between textarea and highlighted syntax overlay
   const handleScroll = () => {
@@ -142,16 +66,6 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       document.body.removeChild(el);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleTitleSubmit = () => {
-    setIsEditingTitle(false);
-    const trimmed = titleInput.trim();
-    if (trimmed) {
-      onUpdate({ title: trimmed });
-    } else {
-      setTitleInput(block.title || 'main.py');
     }
   };
 
@@ -569,23 +483,23 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
   const isMinimized = block.isMinimized ?? false;
 
   // Proportional scaling for smooth typography as window resizes
-  const baseWidth = 480;
-  const baseHeight = 250;
+  const baseWidth = 420;
+  const baseHeight = 180;
   const currentWidth = block.width;
   const currentHeight = block.height || baseHeight;
 
   const widthRatio = currentWidth / baseWidth;
   const heightRatio = currentHeight / baseHeight;
-  const dimensionRatio = Math.max(0.75, Math.min(1.5, widthRatio * 0.65 + heightRatio * 0.35));
+  const dimensionRatio = Math.max(0.75, Math.min(1.4, widthRatio * 0.65 + heightRatio * 0.35));
   const dynamicScale = dimensionRatio;
 
   const codeFontSize = Math.round(13 * dynamicScale);
-  const codeLineHeight = Math.round(20 * dynamicScale);
-  const gutterWidth = Math.max(34, Math.round(44 * dynamicScale));
-  const gutterPadRight = Math.max(4, Math.round(8 * dynamicScale));
-  const lineNumberFontSize = Math.max(9, Math.round(11 * dynamicScale));
-  const editorPadding = Math.max(8, Math.round(12 * dynamicScale));
-  const footerFontSize = Math.max(9, Math.min(13, Math.round(10.5 * dynamicScale)));
+  const codeLineHeight = Math.round(19 * dynamicScale);
+  const gutterWidth = Math.max(30, Math.round(40 * dynamicScale));
+  const gutterPadRight = Math.max(4, Math.round(6 * dynamicScale));
+  const lineNumberFontSize = Math.max(9, Math.round(10.5 * dynamicScale));
+  const editorPadding = Math.max(6, Math.round(8 * dynamicScale));
+  const footerFontSize = Math.max(9, Math.min(12, Math.round(10 * dynamicScale)));
 
   return (
     <div
@@ -594,10 +508,10 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
         e.stopPropagation();
         onFocus();
       }}
-      className={`absolute rounded-xl overflow-hidden transition-all duration-200 flex flex-col border select-none ${
+      className={`absolute rounded-xl overflow-hidden transition-all duration-200 flex flex-col select-none ${
         isDarkMode 
-          ? 'bg-[#141518] border-zinc-700/80 text-zinc-100 shadow-2xl shadow-black/70' 
-          : 'bg-white border-slate-300/80 text-slate-900 shadow-xl shadow-slate-300/60'
+          ? 'bg-[#141518] text-zinc-100 shadow-2xl shadow-black/80' 
+          : 'bg-white text-slate-900 shadow-xl shadow-slate-400/30'
       } ${isActive ? 'ring-2 ring-blue-500/80 ring-offset-2 ring-offset-transparent' : ''}`}
       style={{
         position: 'absolute',
@@ -611,171 +525,70 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
         willChange: 'transform'
       }}
     >
-      {/* Modern Mac-style Window Header Bar */}
+      {/* Compact Mac-style Window Header Bar without text */}
       <div
         onMouseDown={onDragStart}
         onTouchStart={onDragStart}
-        className={`px-3 py-2.5 flex items-center justify-between cursor-move touch-none border-b transition-colors flex-shrink-0 ${
+        className={`px-3 py-1 flex items-center justify-between cursor-move touch-none border-b border-black/5 dark:border-white/5 transition-colors flex-shrink-0 h-7 ${
           isDarkMode 
-            ? 'bg-[#1c1d22] border-zinc-800' 
-            : 'bg-slate-100/90 border-slate-200'
+            ? 'bg-[#1c1d22]' 
+            : 'bg-slate-100/90'
         }`}
       >
         {/* Left: Window Control Traffic Light Dots */}
-        <div className="flex items-center gap-2" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1.5" onMouseDown={(e) => e.stopPropagation()}>
           {/* Red: Close / Delete */}
           <button
             onClick={onDelete}
             title="Удалить блок"
-            className="group relative w-3 h-3 rounded-full bg-[#ff5f56] border border-[#e0443e] flex items-center justify-center transition-transform active:scale-90 hover:brightness-105"
+            className="group relative w-2.5 h-2.5 rounded-full bg-[#ff5f56] border border-[#e0443e] flex items-center justify-center transition-transform active:scale-90 hover:brightness-105"
           >
-            <span className="opacity-0 group-hover:opacity-100 text-[8px] font-bold text-black/70 leading-none">×</span>
+            <span className="opacity-0 group-hover:opacity-100 text-[7px] font-bold text-black/70 leading-none">×</span>
           </button>
 
           {/* Yellow: Minimize / Collapse */}
           <button
             onClick={() => onUpdate({ isMinimized: !isMinimized })}
             title={isMinimized ? "Развернуть" : "Свернуть"}
-            className="group relative w-3 h-3 rounded-full bg-[#ffbd2e] border border-[#dea123] flex items-center justify-center transition-transform active:scale-90 hover:brightness-105"
+            className="group relative w-2.5 h-2.5 rounded-full bg-[#ffbd2e] border border-[#dea123] flex items-center justify-center transition-transform active:scale-90 hover:brightness-105"
           >
-            <span className="opacity-0 group-hover:opacity-100 text-[8px] font-bold text-black/70 leading-none">-</span>
+            <span className="opacity-0 group-hover:opacity-100 text-[7px] font-bold text-black/70 leading-none">-</span>
           </button>
 
           {/* Green: Fit to Content */}
           <button
             onClick={handleAutoFitContent}
             title="Подогнать высоту по коду"
-            className="group relative w-3 h-3 rounded-full bg-[#27c93f] border border-[#1aab29] flex items-center justify-center transition-transform active:scale-90 hover:brightness-105"
+            className="group relative w-2.5 h-2.5 rounded-full bg-[#27c93f] border border-[#1aab29] flex items-center justify-center transition-transform active:scale-90 hover:brightness-105"
           >
-            <span className="opacity-0 group-hover:opacity-100 text-[7px] font-bold text-black/70 leading-none">+</span>
+            <span className="opacity-0 group-hover:opacity-100 text-[6px] font-bold text-black/70 leading-none">+</span>
           </button>
         </div>
 
-        {/* Center: File Title with Python Snake Badge */}
-        <div 
-          className="flex items-center gap-1.5 px-2 py-0.5 rounded cursor-pointer group max-w-[200px]"
+        {/* Right: Clean Icon-only Copy Button */}
+        <button
+          onClick={handleCopy}
           onMouseDown={(e) => e.stopPropagation()}
-          onDoubleClick={() => setIsEditingTitle(true)}
-          title="Двойной клик для переименования"
+          className={`p-1 rounded transition-colors ${
+            copied
+              ? 'text-emerald-500'
+              : (isDarkMode ? 'text-zinc-400 hover:text-zinc-200' : 'text-slate-400 hover:text-slate-700')
+          }`}
+          title="Скопировать код"
         >
-          {/* Python Logo */}
-          <svg className="w-3.5 h-3.5 flex-shrink-0" viewBox="0 0 110 110" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M54.5 5.5C28.2 5.5 29.8 17 29.8 17L29.9 29.2H55.2V32.9H18.9C18.9 32.9 5.5 31.4 5.5 57.7C5.5 84 17.2 82.5 17.2 82.5H24.3V71.8C24.3 71.8 23.7 58.7 36.8 58.7H62.1C62.1 58.7 74.3 59.3 74.3 47.1V21.8C74.3 21.8 76 5.5 54.5 5.5ZM38.2 14.8C41.6 14.8 44.3 17.5 44.3 20.9C44.3 24.3 41.6 27 38.2 27C34.8 27 32.1 24.3 32.1 20.9C32.1 17.5 34.8 14.8 38.2 14.8Z" fill="#387eb8"/>
-            <path d="M55.5 104.5C81.8 104.5 80.2 93 80.2 93L80.1 80.8H54.8V77.1H91.1C91.1 77.1 104.5 78.6 104.5 52.3C104.5 26 92.8 27.5 92.8 27.5H85.7V38.2C85.7 38.2 86.3 51.3 73.2 51.3H47.9C47.9 51.3 35.7 50.7 35.7 62.9V88.2C35.7 88.2 34 104.5 55.5 104.5ZM71.8 95.2C68.4 95.2 65.7 92.5 65.7 89.1C65.7 85.7 68.4 83 71.8 83C75.2 83 77.9 85.7 77.9 89.1C77.9 92.5 75.2 95.2 71.8 95.2Z" fill="#ffe052"/>
-          </svg>
-
-          {isEditingTitle ? (
-            <input
-              ref={titleInputRef}
-              type="text"
-              value={titleInput}
-              autoFocus
-              onChange={(e) => setTitleInput(e.target.value)}
-              onBlur={handleTitleSubmit}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleTitleSubmit();
-                if (e.key === 'Escape') {
-                  setTitleInput(block.title || 'main.py');
-                  setIsEditingTitle(false);
-                }
-              }}
-              className={`text-xs font-mono font-medium px-1 py-0.5 rounded outline-none border ${
-                isDarkMode 
-                  ? 'bg-zinc-800 border-zinc-600 text-white' 
-                  : 'bg-white border-blue-400 text-slate-800'
-              }`}
-            />
+          {copied ? (
+            <Check className="w-3.5 h-3.5 text-emerald-500 stroke-[2.5]" />
           ) : (
-            <span className={`text-xs font-mono font-medium truncate ${
-              isDarkMode ? 'text-zinc-300 group-hover:text-white' : 'text-slate-700 group-hover:text-slate-900'
-            }`}>
-              {block.title || 'main.py'}
-            </span>
+            <Copy className="w-3.5 h-3.5" />
           )}
-        </div>
-
-        {/* Right: Actions (Presets, Copy) */}
-        <div className="flex items-center gap-1" onMouseDown={(e) => e.stopPropagation()}>
-          {/* Examples Preset Menu */}
-          <div className="relative">
-            <button
-              onClick={() => setShowPresets(!showPresets)}
-              className={`px-2 py-1 rounded text-xs font-sans flex items-center gap-1 transition-colors ${
-                isDarkMode 
-                  ? 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800' 
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-              }`}
-              title="Примеры кода"
-            >
-              <FileCode2 className="w-3.5 h-3.5" />
-              <span className="text-[11px] hidden sm:inline">Примеры</span>
-            </button>
-
-            {showPresets && (
-              <div 
-                className={`absolute right-0 top-full mt-1.5 w-60 rounded-lg shadow-2xl border p-1 z-50 text-xs font-sans select-none backdrop-blur-md ${
-                  isDarkMode 
-                    ? 'bg-[#1e1f24]/95 border-zinc-700 text-zinc-200' 
-                    : 'bg-white/95 border-slate-200 text-slate-800'
-                }`}
-              >
-                <div className={`px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider border-b mb-1 ${
-                  isDarkMode ? 'text-zinc-400 border-zinc-700/60' : 'text-slate-400 border-slate-100'
-                }`}>
-                  Примеры Python
-                </div>
-                {PYTHON_PRESETS.map((p, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      onUpdate({ code: p.code });
-                      setShowPresets(false);
-                    }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors ${
-                      isDarkMode 
-                        ? 'hover:bg-zinc-800 hover:text-white' 
-                        : 'hover:bg-blue-50 hover:text-blue-600'
-                    }`}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Copy Button */}
-          <button
-            onClick={handleCopy}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-sans transition-all duration-150 ${
-              copied
-                ? (isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600')
-                : (isDarkMode 
-                    ? 'text-zinc-300 hover:text-white hover:bg-zinc-800' 
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200')
-            }`}
-            title="Скопировать код"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-500 stroke-[2.5]" />
-                <span className="text-[11px] font-medium text-emerald-500">Скопировано</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                <span className="text-[11px] font-medium hidden sm:inline">Копировать</span>
-              </>
-            )}
-          </button>
-        </div>
+        </button>
       </div>
 
       {/* Editor Body */}
       {!isMinimized && (
         <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
           <div 
-            className={`relative flex-1 min-h-[90px] overflow-hidden ${
+            className={`relative flex-1 min-h-[70px] overflow-hidden ${
               isDarkMode ? 'bg-[#141518]' : 'bg-[#fafafa]'
             }`}
           >
@@ -819,7 +632,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
               style={{
                 tabSize: 4,
                 padding: `${editorPadding}px`,
-                paddingLeft: `${gutterWidth + editorPadding + 12}px`,
+                paddingLeft: `${gutterWidth + editorPadding + 10}px`,
                 fontSize: `${codeFontSize}px`,
                 lineHeight: `${codeLineHeight}px`,
                 fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace'
@@ -828,22 +641,20 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
             />
           </div>
 
-          {/* Clean Bottom Status Bar */}
+          {/* Clean Compact Bottom Status Bar */}
           <div 
-            className={`px-3 py-1.5 flex items-center justify-between border-t select-none transition-colors flex-shrink-0 ${
+            className={`px-2.5 py-0.5 flex items-center justify-between border-t border-black/5 dark:border-white/5 select-none transition-colors flex-shrink-0 ${
               isDarkMode 
-                ? 'bg-[#1a1b20] border-zinc-800 text-zinc-400' 
-                : 'bg-slate-100/90 border-slate-200 text-slate-500'
+                ? 'bg-[#18191e] text-zinc-400' 
+                : 'bg-slate-50 text-slate-500'
             }`}
             style={{ fontSize: `${footerFontSize}px` }}
           >
-            <div className="flex items-center gap-3">
-              <span className="font-mono">Python 3</span>
-              <span className="opacity-40">•</span>
+            <div className="flex items-center gap-2">
               <span>{lineCount} {lineCount === 1 ? 'строка' : (lineCount < 5 ? 'строки' : 'строк')}</span>
-              <span className="opacity-40 hidden sm:inline">•</span>
-              <span className="font-mono text-[10px] opacity-75 hidden sm:inline">
-                Стр {cursorPos.line}, Кол {cursorPos.col}
+              <span className="opacity-30">•</span>
+              <span className="font-mono text-[10px] opacity-70">
+                {cursorPos.line}:{cursorPos.col}
               </span>
             </div>
 
@@ -851,16 +662,13 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
             <div 
               onMouseDown={onResizeStart}
               onTouchStart={onResizeStart}
-              className="cursor-nwse-resize p-1 -mr-1 hover:text-blue-500 touch-none select-none transition-colors"
+              className="cursor-nwse-resize p-0.5 hover:text-blue-500 touch-none select-none transition-colors"
               title="Изменить размер блока"
             >
-              <svg className="w-3 h-3" viewBox="0 0 10 10" fill="currentColor">
+              <svg className="w-2.5 h-2.5 opacity-60" viewBox="0 0 10 10" fill="currentColor">
                 <circle cx="8" cy="8" r="1.2" />
                 <circle cx="4.5" cy="8" r="1.2" />
                 <circle cx="8" cy="4.5" r="1.2" />
-                <circle cx="1" cy="8" r="1.2" />
-                <circle cx="4.5" cy="4.5" r="1.2" />
-                <circle cx="8" cy="1" r="1.2" />
               </svg>
             </div>
           </div>
