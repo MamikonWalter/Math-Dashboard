@@ -216,9 +216,10 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       }
     }
 
-    // 4. Backspace: delete both characters when between empty pairs
+    // 4. Backspace: Smart Un-indent ("Tab" назад) and empty pair deletion
     if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       if (start === end && start > 0) {
+        // 4a. Delete both characters when between empty pairs: (), [], {}, "", ''
         const charBefore = code[start - 1];
         const charAfter = code[start];
         if (
@@ -234,9 +235,43 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
           setTimeout(() => {
             if (textareaRef.current) {
               textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start - 1;
+              updateCursorPosition();
             }
           }, 0);
           return;
+        }
+
+        // 4b. Smart programming un-indent by Tab stop (4 spaces)
+        const lineStart = code.lastIndexOf('\n', start - 1) + 1;
+        const beforeInLine = code.substring(lineStart, start);
+
+        // Check if cursor is preceded by spaces on the current line
+        const trailingSpacesMatch = beforeInLine.match(/ +$/);
+        if (trailingSpacesMatch) {
+          const numSpaces = trailingSpacesMatch[0].length;
+          const isPureIndentation = beforeInLine.length === numSpaces;
+          const col = beforeInLine.length;
+          const remainder = col % 4;
+          const spacesToDelete = remainder === 0 
+            ? Math.min(4, numSpaces) 
+            : Math.min(remainder, numSpaces);
+
+          // If line up to cursor is pure indentation, ALWAYS delete to previous tab stop (even 1-4 spaces)
+          // If there is code before spaces, delete to previous tab stop if spacesToDelete > 1 or numSpaces >= 4
+          if (isPureIndentation || spacesToDelete > 1 || numSpaces >= 4) {
+            e.preventDefault();
+            const count = (numSpaces >= 4 && spacesToDelete === 0) ? 4 : spacesToDelete;
+            const actualCount = count > 0 ? count : (isPureIndentation ? numSpaces : 1);
+            const newCode = code.substring(0, start - actualCount) + code.substring(start);
+            onUpdate({ code: newCode });
+            setTimeout(() => {
+              if (textareaRef.current) {
+                textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start - actualCount;
+                updateCursorPosition();
+              }
+            }, 0);
+            return;
+          }
         }
       }
     }
