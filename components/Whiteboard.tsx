@@ -588,20 +588,26 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const drawCodeBlockOnCtx = (ctx: CanvasRenderingContext2D, block: CodeBlockItem, isDark: boolean) => {
     const x = block.x;
     const y = block.y;
-    const w = block.width;
-    const h = block.isMinimized ? 42 : (block.height || 240);
     const r = 12;
 
-    const baseWidth = 480;
-    const baseHeight = 250;
-    const widthRatio = w / baseWidth;
-    const heightRatio = h / baseHeight;
-    const dynamicScale = Math.max(0.6, Math.min(3.5, widthRatio * 0.65 + heightRatio * 0.35));
+    const lines = (block.code || '').split('\n');
+    const lineCount = Math.max(1, lines.length);
+    const maxVisualLen = lines.reduce((max, l) => Math.max(max, l.replace(/\t/g, '    ').length), 0);
 
-    const codeFontSize = Math.round(12 * dynamicScale);
-    const lineH = Math.round(19 * dynamicScale);
-    const gutterW = Math.max(26, Math.round(36 * dynamicScale));
-    const headerH = Math.max(22, Math.round(26 * dynamicScale));
+    const baseWidth = Math.max(380, block.width || 380);
+    const codeFontSize = 13;
+    const lineH = 20;
+    const gutterW = lineCount >= 100 ? 42 : 36;
+    const headerH = 28;
+    const footerH = 24;
+
+    const charW = 8.05;
+    const textW = Math.ceil(maxVisualLen * charW);
+    const neededW = (gutterW + 12) + textW + 28;
+    const w = Math.max(baseWidth, neededW);
+
+    const editorContentH = lineCount * lineH + 16;
+    const h = block.isMinimized ? headerH : (headerH + editorContentH + footerH);
 
     ctx.save();
     // Card background (borderless)
@@ -626,10 +632,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     ctx.fill();
 
     // macOS Window control dots
-    const dotRadius = Math.max(3, Math.min(5, 4 * dynamicScale));
+    const dotRadius = 4;
     const dotY = y + headerH / 2;
     const dotStartX = x + 12;
-    const dotGap = Math.max(8, 12 * dynamicScale);
+    const dotGap = 11;
 
     // Red dot
     ctx.beginPath();
@@ -653,25 +659,24 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     if (!block.isMinimized) {
       // Line numbers gutter
       ctx.fillStyle = isDark ? '#16171a' : '#f8fafc';
-      ctx.fillRect(x + 1, y + headerH, gutterW, h - headerH - 1);
+      ctx.fillRect(x + 1, y + headerH, gutterW, h - headerH - footerH);
       ctx.strokeStyle = isDark ? '#27272a' : '#e2e8f0';
       ctx.beginPath();
       ctx.moveTo(x + 1 + gutterW, y + headerH);
-      ctx.lineTo(x + 1 + gutterW, y + h - 1);
+      ctx.lineTo(x + 1 + gutterW, y + h - footerH);
       ctx.stroke();
 
       // Code lines
-      const lines = (block.code || '').split('\n');
       ctx.font = `${codeFontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
       ctx.textBaseline = 'top';
 
       lines.forEach((line, i) => {
-        const lineY = y + headerH + Math.round(8 * dynamicScale) + i * lineH;
-        if (lineY + lineH > y + h - 12) return;
+        const lineY = y + headerH + 8 + i * lineH;
+        if (lineY + lineH > y + h - 8) return;
 
         // Line number
         ctx.fillStyle = isDark ? '#52525b' : '#94a3b8';
-        ctx.fillText(String(i + 1), x + Math.max(6, Math.round(8 * dynamicScale)), lineY);
+        ctx.fillText(String(i + 1), x + 8, lineY);
 
         // Code line syntax styling
         if (line.trim().startsWith('#')) {
@@ -681,7 +686,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         } else {
           ctx.fillStyle = isDark ? '#f4f4f5' : '#0f172a';
         }
-        ctx.fillText(line, x + gutterW + Math.round(10 * dynamicScale), lineY);
+        ctx.fillText(line, x + gutterW + 12, lineY);
       });
     }
     ctx.restore();
@@ -886,8 +891,13 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             maxY = Math.max(maxY, bounds.maxY);
         });
         codeBlocksRef.current.forEach(block => {
-            const w = block.width;
-            const h = block.isMinimized ? 42 : (block.height || 240);
+            const lines = (block.code || '').split('\n');
+            const lineCount = Math.max(1, lines.length);
+            const maxVisualLen = lines.reduce((max, l) => Math.max(max, l.replace(/\t/g, '    ').length), 0);
+            const neededW = 48 + Math.ceil(maxVisualLen * 8.05) + 28;
+            const w = Math.max(block.width || 380, neededW);
+            const neededH = 28 + (lineCount * 20 + 16) + 24;
+            const h = block.isMinimized ? 28 : (block.height || neededH);
             minX = Math.min(minX, block.x);
             maxX = Math.max(maxX, block.x + w);
             minY = Math.min(minY, block.y);

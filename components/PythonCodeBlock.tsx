@@ -33,11 +33,15 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
-  // Synchronize scrolling between textarea and highlighted syntax overlay
+  // Keep scroll position strictly at 0 (no scrollbars, auto-expanding layout)
   const handleScroll = () => {
-    if (textareaRef.current && preRef.current) {
-      preRef.current.scrollTop = textareaRef.current.scrollTop;
-      preRef.current.scrollLeft = textareaRef.current.scrollLeft;
+    if (textareaRef.current) {
+      textareaRef.current.scrollTop = 0;
+      textareaRef.current.scrollLeft = 0;
+    }
+    if (preRef.current) {
+      preRef.current.scrollTop = 0;
+      preRef.current.scrollLeft = 0;
     }
   };
 
@@ -479,27 +483,49 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
     }
   };
 
-  const lineCount = block.code.split('\n').length;
+  const lines = (block.code || '').split('\n');
+  const lineCount = Math.max(1, lines.length);
   const isMinimized = block.isMinimized ?? false;
 
-  // Proportional scaling for smooth typography as window resizes
-  const baseWidth = 420;
-  const baseHeight = 180;
-  const currentWidth = block.width;
-  const currentHeight = block.height || baseHeight;
+  // Visual length of the longest line (expanding tabs to 4 spaces)
+  const maxVisualLength = lines.reduce((max, line) => {
+    const expanded = line.replace(/\t/g, '    ');
+    return Math.max(max, expanded.length);
+  }, 0);
 
-  const widthRatio = currentWidth / baseWidth;
-  const heightRatio = currentHeight / baseHeight;
-  const dimensionRatio = Math.max(0.75, Math.min(1.4, widthRatio * 0.65 + heightRatio * 0.35));
-  const dynamicScale = dimensionRatio;
+  // Typography & Layout parameters
+  const baseWidth = Math.max(380, block.width || 380);
+  const codeFontSize = 13;
+  const codeLineHeight = 20;
+  const gutterWidth = lineCount >= 100 ? 42 : 36;
+  const gutterPadRight = 6;
+  const lineNumberFontSize = 10.5;
+  const editorPaddingTop = 8;
+  const editorPaddingBottom = 8;
+  const footerFontSize = 10.5;
+  const headerHeight = 28; // h-7
+  const footerHeight = 24; // h-6
 
-  const codeFontSize = Math.round(13 * dynamicScale);
-  const codeLineHeight = Math.round(19 * dynamicScale);
-  const gutterWidth = Math.max(30, Math.round(40 * dynamicScale));
-  const gutterPadRight = Math.max(4, Math.round(6 * dynamicScale));
-  const lineNumberFontSize = Math.max(9, Math.round(10.5 * dynamicScale));
-  const editorPadding = Math.max(6, Math.round(8 * dynamicScale));
-  const footerFontSize = Math.max(9, Math.min(12, Math.round(10 * dynamicScale)));
+  // Horizontal text width calculation:
+  // Monospace char width at 13px is ~7.82px, we use 8.05px for safety margin
+  const charWidth = 8.05;
+  const textContentWidth = Math.ceil(maxVisualLength * charWidth);
+  const gutterTotalWidth = gutterWidth + 12; // gutter + 12px padding before text
+  const paddingRight = 28; // right breathing space
+  const neededWidth = gutterTotalWidth + textContentWidth + paddingRight;
+  const effectiveWidth = Math.max(baseWidth, neededWidth);
+
+  // Vertical height calculation:
+  // Automatically grows with line count, no vertical scrollbar will ever be needed
+  const editorContentHeight = lineCount * codeLineHeight + editorPaddingTop + editorPaddingBottom;
+  const effectiveHeight = isMinimized ? headerHeight : (headerHeight + editorContentHeight + footerHeight);
+
+  // Synchronize effective dimensions with parent for canvas export & hit-testing
+  useEffect(() => {
+    if (Math.abs((block.width || 0) - effectiveWidth) > 1 || Math.abs((block.height || 0) - effectiveHeight) > 1) {
+      onUpdate({ width: effectiveWidth, height: effectiveHeight });
+    }
+  }, [effectiveWidth, effectiveHeight]);
 
   return (
     <div
@@ -508,7 +534,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
         e.stopPropagation();
         onFocus();
       }}
-      className={`absolute rounded-xl overflow-hidden transition-all duration-200 flex flex-col select-none ${
+      className={`absolute rounded-xl overflow-hidden transition-all duration-200 flex flex-col select-none codeblock-no-scroll ${
         isDarkMode 
           ? 'bg-[#141518] text-zinc-100 shadow-2xl shadow-black/80' 
           : 'bg-white text-slate-900 shadow-xl shadow-slate-400/30'
@@ -519,8 +545,8 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
         transformOrigin: '0 0',
         left: 0,
         top: 0,
-        width: `${block.width}px`,
-        height: isMinimized ? 'auto' : `${block.height || baseHeight}px`,
+        width: `${effectiveWidth}px`,
+        height: `${effectiveHeight}px`,
         zIndex: isActive ? 30 : 15,
         willChange: 'transform'
       }}
@@ -586,23 +612,30 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
 
       {/* Editor Body */}
       {!isMinimized && (
-        <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden codeblock-no-scroll">
           <div 
-            className={`relative flex-1 min-h-[70px] overflow-hidden ${
+            className={`relative flex-1 overflow-hidden codeblock-no-scroll ${
               isDarkMode ? 'bg-[#141518]' : 'bg-[#fafafa]'
             }`}
+            style={{
+              height: `${editorContentHeight}px`
+            }}
           >
             {/* Syntax Highlighted View Underneath */}
             <pre
               ref={preRef}
               aria-hidden="true"
-              className="absolute inset-0 m-0 overflow-auto pointer-events-none font-mono whitespace-pre select-none"
+              className="absolute inset-0 m-0 overflow-hidden pointer-events-none font-mono whitespace-pre select-none codeblock-no-scroll"
               style={{
                 tabSize: 4,
-                padding: `${editorPadding}px`,
+                paddingTop: `${editorPaddingTop}px`,
+                paddingBottom: `${editorPaddingBottom}px`,
                 fontSize: `${codeFontSize}px`,
                 lineHeight: `${codeLineHeight}px`,
-                fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace'
+                fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace',
+                overflow: 'hidden',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none'
               }}
             >
               {renderHighlightedCode(block.code, codeFontSize, codeLineHeight, gutterWidth, lineNumberFontSize, gutterPadRight)}
@@ -624,18 +657,24 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
               autoCapitalize="off"
               autoComplete="off"
               autoCorrect="off"
-              className={`absolute inset-0 w-full h-full m-0 bg-transparent text-transparent outline-none resize-none font-mono whitespace-pre overflow-auto z-10 select-text ${
+              className={`absolute inset-0 w-full h-full m-0 bg-transparent text-transparent outline-none resize-none font-mono whitespace-pre overflow-hidden z-10 select-text codeblock-no-scroll ${
                 isDarkMode 
                   ? 'caret-blue-400 placeholder:text-zinc-500/80 selection:bg-blue-600/30' 
                   : 'caret-blue-600 placeholder:text-slate-400 selection:bg-blue-100'
               }`}
               style={{
                 tabSize: 4,
-                padding: `${editorPadding}px`,
-                paddingLeft: `${gutterWidth + editorPadding + 10}px`,
+                paddingTop: `${editorPaddingTop}px`,
+                paddingBottom: `${editorPaddingBottom}px`,
+                paddingLeft: `${gutterWidth + 12}px`,
+                paddingRight: '28px',
                 fontSize: `${codeFontSize}px`,
                 lineHeight: `${codeLineHeight}px`,
-                fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace'
+                fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace',
+                overflow: 'hidden',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none',
+                resize: 'none'
               }}
               placeholder="# Введите Python код..."
             />
@@ -643,7 +682,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
 
           {/* Clean Compact Bottom Status Bar */}
           <div 
-            className={`px-2.5 py-0.5 flex items-center justify-between border-t border-black/5 dark:border-white/5 select-none transition-colors flex-shrink-0 ${
+            className={`px-2.5 py-0.5 flex items-center justify-between border-t border-black/5 dark:border-white/5 select-none transition-colors flex-shrink-0 h-6 ${
               isDarkMode 
                 ? 'bg-[#18191e] text-zinc-400' 
                 : 'bg-slate-50 text-slate-500'
