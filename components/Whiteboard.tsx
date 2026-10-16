@@ -35,6 +35,63 @@ interface TextInputState {
     width: number; // World coords width
 }
 
+// Maximum undo/redo states to retain in memory (prevents unbounded memory growth)
+const MAX_HISTORY_STEPS = 25;
+
+// Fast iterative Ramer-Douglas-Peucker simplification for 2D points to save memory and CPU
+const simplifyPoints = (points: Point[], tolerance: number = 0.6): Point[] => {
+  const len = points.length;
+  if (len <= 2) return points;
+  const sqTolerance = tolerance * tolerance;
+  const markers = new Uint8Array(len);
+  markers[0] = 1;
+  markers[len - 1] = 1;
+
+  const stack: [number, number][] = [[0, len - 1]];
+
+  while (stack.length > 0) {
+    const [start, end] = stack.pop()!;
+    let maxSqDist = 0;
+    let maxIdx = start;
+    const pStart = points[start];
+    const pEnd = points[end];
+    const dx = pEnd.x - pStart.x;
+    const dy = pEnd.y - pStart.y;
+    const lineSq = dx * dx + dy * dy;
+
+    for (let i = start + 1; i < end; i++) {
+      const p = points[i];
+      let sqDist: number;
+      if (lineSq === 0) {
+        sqDist = (p.x - pStart.x) ** 2 + (p.y - pStart.y) ** 2;
+      } else {
+        const t = ((p.x - pStart.x) * dx + (p.y - pStart.y) * dy) / lineSq;
+        const clampedT = Math.max(0, Math.min(1, t));
+        const projX = pStart.x + clampedT * dx;
+        const projY = pStart.y + clampedT * dy;
+        sqDist = (p.x - projX) ** 2 + (p.y - projY) ** 2;
+      }
+
+      if (sqDist > maxSqDist) {
+        maxSqDist = sqDist;
+        maxIdx = i;
+      }
+    }
+
+    if (maxSqDist > sqTolerance) {
+      markers[maxIdx] = 1;
+      if (maxIdx - start > 1) stack.push([start, maxIdx]);
+      if (end - maxIdx > 1) stack.push([maxIdx, end]);
+    }
+  }
+
+  const result: Point[] = [];
+  for (let i = 0; i < len; i++) {
+    if (markers[i]) result.push(points[i]);
+  }
+  return result;
+};
+
 const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({ 
   tool, 
   color, 
@@ -692,13 +749,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     ctx.restore();
   };
 
-  const deepCloneStrokes = (strokes: Stroke[]): Stroke[] => {
-    return strokes.map(s => ({
-      ...s,
-      points: s.points.map(p => ({ x: p.x, y: p.y }))
-    }));
-  };
-
   // --- Imperative Handle ---
   useImperativeHandle(ref, () => ({
     getSnapshot: (): WhiteboardData => {
@@ -724,8 +774,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             }
         });
         historyRef.current = [{
-          strokes: deepCloneStrokes(data.strokes),
-          codeBlocks: JSON.parse(JSON.stringify(blocks))
+          strokes: [...data.strokes],
+          codeBlocks: blocks.map(b => ({ ...b }))
         }];
         historyStepRef.current = 0;
         selectedIndicesRef.current.clear();
@@ -752,8 +802,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         }
       });
       historyRef.current = [{
-        strokes: deepCloneStrokes(strokesRef.current),
-        codeBlocks: JSON.parse(JSON.stringify(codeBlocksList))
+        strokes: [...strokesRef.current],
+        codeBlocks: codeBlocksList.map(b => ({ ...b }))
       }];
       historyStepRef.current = 0;
       selectedIndicesRef.current.clear();
@@ -779,8 +829,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         }
       });
       historyRef.current = [{
-        strokes: deepCloneStrokes(strokesRef.current),
-        codeBlocks: JSON.parse(JSON.stringify(codeBlocksList))
+        strokes: [...strokesRef.current],
+        codeBlocks: codeBlocksList.map(b => ({ ...b }))
       }];
       historyStepRef.current = 0;
       selectedIndicesRef.current.clear();
@@ -931,9 +981,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         offCtx.translate(-minX + padding, -minY + padding);
         strokesRef.current.forEach(stroke => drawStrokeOnCtx(offCtx, stroke));
         codeBlocksRef.current.forEach(block => drawCodeBlockOnCtx(offCtx, block, isDarkMode));
-        offCtx.restore();
-
-        return offCanvas.toDataURL('image/png');
+        const dataUrl = offCanvas.toDataURL('image/png');
+        offCanvas.width = 0;
+        offCanvas.height = 0;
+        return dataUrl;
     },
     addImage: (imageUrl: string, screenX: number, screenY: number) => {
         const img = new Image();
@@ -1229,6 +1280,30 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     // Draw active eraser trail and circular head
     drawEraserTrail(ctx);
   }, [showGrid, isDarkMode, tool, eraserWidth]);
+
+  // RequestAnimationFrame throttled render to prevent CPU/memory churn on high-frequency pointer moves
+  const renderRafRef = useRef<number | null>(null);
+  const requestRender = useCallback(() => {
+    if (renderRafRef.current === null) {
+      renderRafRef.current = requestAnimationFrame(() => {
+        renderRafRef.current = null;
+        render();
+      });
+    }
+  }, [render]);
+
+  useEffect(() => {
+    return () => {
+      if (renderRafRef.current !== null) {
+        cancelAnimationFrame(renderRafRef.current);
+        renderRafRef.current = null;
+      }
+      if (eraserFadeAnimRef.current !== null) {
+        cancelAnimationFrame(eraserFadeAnimRef.current);
+        eraserFadeAnimRef.current = null;
+      }
+    };
+  }, []);
 
   // Smoothly fade out the eraser trail upon release
   const startEraserTrailFade = useCallback(() => {
@@ -1546,7 +1621,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
        cameraRef.current.y += coords.y - lastMousePosRef.current.y;
        lastMousePosRef.current = coords;
        setCamTick(t => t + 1);
-       render(); return;
+       requestRender(); return;
     }
 
     if (isRotatingRef.current) {
@@ -1573,7 +1648,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                 }
             }
             stroke.rotation = newRotation;
-            render();
+            requestRender();
         }
         return;
     }
@@ -1624,7 +1699,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             if (onShapeSelect && (shapeTools.includes(stroke.tool) || stroke.tool === 'image')) {
                 onShapeSelect(Math.round(newWidth / PIXELS_PER_PERCENT));
             }
-            render();
+            requestRender();
         }
         return;
     }
@@ -1659,28 +1734,27 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                 trimTrailToMaxLength(trail, maxTrailLength);
             }
             performErase(worldPos);
-            render();
+            requestRender();
             return;
         } else {
-            render();
+            requestRender();
             return;
         }
     }
     if (isSelectingRef.current) {
         selectionCurrentRef.current = screenToWorld(coords.x, coords.y);
-        render(); return;
+        requestRender(); return;
     }
     if (tool === 'cursor' && isDraggingSelectionRef.current && lastMousePosRef.current) {
         const worldPos = screenToWorld(coords.x, coords.y);
         const lastWorldPos = screenToWorld(lastMousePosRef.current.x, lastMousePosRef.current.y);
         const dx = worldPos.x - lastWorldPos.x;
         const dy = worldPos.y - lastWorldPos.y;
-        // FIXED: Explicitly typing idx as number
         selectedIndicesRef.current.forEach((idx: number) => {
             const stroke = strokesRef.current[idx];
             if (stroke) stroke.points.forEach(p => { p.x += dx; p.y += dy; });
         });
-        render(); lastMousePosRef.current = coords; return;
+        requestRender(); lastMousePosRef.current = coords; return;
     }
     if (isDrawingRef.current && currentStrokeRef.current) {
         if (e.cancelable) e.preventDefault();
@@ -1690,8 +1764,17 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         if (currentStrokeRef.current.tool === 'dotted-line' || (currentStrokeRef.current.tool === 'pen' && isShift)) {
              const targetPos = isShift ? snapToAngle(startPos, worldPos) : worldPos;
              currentStrokeRef.current.points = [startPos, targetPos];
-        } else currentStrokeRef.current.points.push(worldPos);
-        render();
+        } else {
+             const pts = currentStrokeRef.current.points;
+             const lastPt = pts[pts.length - 1];
+             const scale = scaleRef.current || 1;
+             // Distance threshold in world coordinates (~1 screen pixel) to drop sub-pixel jitter
+             const minDistance = 1.0 / scale;
+             if ((worldPos.x - lastPt.x) ** 2 + (worldPos.y - lastPt.y) ** 2 >= minDistance * minDistance) {
+                 pts.push(worldPos);
+             }
+        }
+        requestRender();
     }
 
     // Hover cursor feedback in cursor mode when not interacting
@@ -1732,7 +1815,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             canvasRef.current.style.cursor = hoveredTarget ? hoveredTarget.cursor : 'default';
         }
         if ((prevHovered?.strokeIndex !== hoveredTarget?.strokeIndex) || (prevHovered?.handle !== hoveredTarget?.handle)) {
-            render();
+            requestRender();
         }
     }
 
@@ -1791,8 +1874,20 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     }
     if (isDrawingRef.current && currentStrokeRef.current) {
         isDrawingRef.current = false;
+        let finalPoints = currentStrokeRef.current.points;
+        if (currentStrokeRef.current.tool === 'pen' && finalPoints.length > 2) {
+            const scale = scaleRef.current || 1;
+            const tolerance = Math.max(0.4, 0.7 / scale);
+            finalPoints = simplifyPoints(finalPoints, tolerance);
+            // Precision rounding to 1 decimal place reduces memory representation & JSON footprint
+            finalPoints = finalPoints.map(p => ({
+                x: Math.round(p.x * 10) / 10,
+                y: Math.round(p.y * 10) / 10
+            }));
+        }
         const finishedStroke: Stroke = {
           ...currentStrokeRef.current,
+          points: finalPoints,
           id: currentStrokeRef.current.id || `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           updatedAt: Date.now()
         };
@@ -1961,12 +2056,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const pushHistory = (newStrokes: Stroke[] = strokesRef.current, newBlocks: CodeBlockItem[] = codeBlocksRef.current, syncRemote: boolean = true) => {
       const newHistory = historyRef.current.slice(0, historyStepRef.current + 1);
       newHistory.push({
-          strokes: deepCloneStrokes(newStrokes),
-          codeBlocks: JSON.parse(JSON.stringify(newBlocks))
+          strokes: [...newStrokes],
+          codeBlocks: newBlocks.map(b => ({ ...b }))
       });
+      // Cap history to MAX_HISTORY_STEPS to prevent unbounded memory growth over long sessions
+      if (newHistory.length > MAX_HISTORY_STEPS) {
+          newHistory.splice(0, newHistory.length - MAX_HISTORY_STEPS);
+      }
       historyRef.current = newHistory; 
-      historyStepRef.current += 1;
-      onHistoryChange(true, false);
+      historyStepRef.current = newHistory.length - 1;
+      onHistoryChange(historyStepRef.current > 0, false);
       if (syncRemote && onStrokesChanged) {
         onStrokesChanged(newStrokes);
       }
