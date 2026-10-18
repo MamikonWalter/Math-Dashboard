@@ -17,7 +17,7 @@ export const ALL_COLORS = [
 ];
 
 export const DEFAULT_STROKE_WIDTH = 3;
-export const DEFAULT_ERASER_WIDTH = 40;
+export const DEFAULT_ERASER_WIDTH = 10;
 export const DEFAULT_SHAPE_SIZE = 80; // 80%
 export const PIXELS_PER_PERCENT = 10; // 1% = 10px
 export const DEFAULT_COLOR = '#000000';

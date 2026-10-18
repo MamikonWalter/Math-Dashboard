@@ -49,6 +49,7 @@ export interface Stroke {
   textWidth?: number; // Optional horizontal width for text boxes
   rotation?: number; // Rotation angle in radians
   updatedAt?: number;
+  isLocked?: boolean; // When true, image object is pinned/locked (cannot be erased or dragged)
 }
 
 export interface DrawingState {
