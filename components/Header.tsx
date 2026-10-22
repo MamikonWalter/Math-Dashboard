@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useEffect } from 'react';
 import { Save, FolderOpen, Image as ImageIcon, Moon, Sun } from 'lucide-react';
 
@@ -60,7 +59,7 @@ const Header: React.FC<HeaderProps> = ({
 
   return (
     <div 
-      className={`fixed top-0 left-0 right-0 h-16 px-4 flex items-center justify-between z-30 shadow-sm select-none ui-smooth-transition transition-colors duration-300 ${
+      className={`fixed top-0 left-0 right-0 h-12 px-3 flex items-center justify-between z-30 shadow-sm select-none ui-smooth-transition transition-colors duration-300 ${
         isDarkMode 
           ? 'bg-[#202024] border-b border-[#323238] text-gray-100' 
           : 'bg-white border-b border-gray-200 text-gray-900'
@@ -68,15 +67,15 @@ const Header: React.FC<HeaderProps> = ({
         isVisible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 -translate-y-full pointer-events-none'
       }`}
     >
-      <div className="flex items-center gap-4 pl-2">
+      <div className="flex items-center gap-3 pl-1">
         <div className="flex items-center gap-0 select-none cursor-pointer" onClick={() => window.location.reload()}>
-          <span className={`text-2xl font-bold tracking-tight transition-colors ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Mathters</span>
+          <span className={`text-lg font-bold tracking-tight transition-colors ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Mathters</span>
         </div>
 
-        <div className={`h-6 w-px transition-colors ${isDarkMode ? 'bg-[#3f3f46]' : 'bg-gray-300'}`} />
+        <div className={`h-4.5 w-px transition-colors ${isDarkMode ? 'bg-[#3f3f46]' : 'bg-gray-300'}`} />
 
         <div className="flex flex-col justify-center">
-            <div className="flex items-center gap-2 text-sm font-medium h-5">
+            <div className="flex items-center gap-2 text-xs font-medium h-4">
                 {isEditingName ? (
                     <input
                         ref={nameInputRef}
@@ -86,7 +85,7 @@ const Header: React.FC<HeaderProps> = ({
                         onBlur={handleNameSubmit}
                         onKeyDown={handleKeyDown}
                         maxLength={20}
-                        className={`rounded px-1.5 py-0.5 outline-none text-sm w-40 border ${
+                        className={`rounded px-1.5 py-0.5 outline-none text-xs w-36 border ${
                           isDarkMode 
                             ? 'bg-[#18181b] border-blue-500 text-gray-100' 
                             : 'bg-white border-blue-500 text-gray-900'
@@ -95,7 +94,7 @@ const Header: React.FC<HeaderProps> = ({
                 ) : (
                     <span 
                         onClick={() => setIsEditingName(true)}
-                        className={`cursor-pointer px-2 py-0.5 rounded transition-colors truncate max-w-[200px] ${
+                        className={`cursor-pointer px-1.5 py-0.5 rounded transition-colors truncate max-w-[180px] text-xs ${
                           isDarkMode 
                             ? 'text-gray-200 hover:bg-[#2c2c31]' 
                             : 'text-gray-900 hover:bg-gray-100'
@@ -109,59 +108,59 @@ const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <button 
           onClick={onSave}
-          className={`px-3 py-2 rounded-md font-medium text-sm flex items-center gap-2 transition-colors border ${
+          className={`px-2.5 py-1 rounded font-medium text-xs flex items-center gap-1.5 transition-colors border ${
             isDarkMode 
               ? 'text-gray-200 bg-[#28282e] hover:bg-[#32323a] border-[#3f3f46]' 
               : 'text-gray-700 bg-white hover:bg-gray-100 border-gray-300'
           }`}
           title="Сохранить проект как JSON"
         >
-          <Save className="w-4 h-4" />
+          <Save className="w-3.5 h-3.5" />
           JSON
         </button>
 
         <button 
           onClick={() => onExportPNG(boardName)}
-          className={`px-3 py-2 rounded-md font-medium text-sm flex items-center gap-2 transition-colors border ${
+          className={`px-2.5 py-1 rounded font-medium text-xs flex items-center gap-1.5 transition-colors border ${
             isDarkMode 
               ? 'text-gray-200 bg-[#28282e] hover:bg-[#32323a] border-[#3f3f46]' 
               : 'text-gray-700 bg-white hover:bg-gray-100 border-gray-300'
           }`}
           title="Экспорт всей доски в PNG"
         >
-          <ImageIcon className="w-4 h-4" />
+          <ImageIcon className="w-3.5 h-3.5" />
           PNG
         </button>
 
         {onToggleDarkMode && (
           <button 
             onClick={onToggleDarkMode}
-            className={`p-2 rounded-md font-medium text-sm flex items-center justify-center transition-colors border ${
+            className={`p-1.5 rounded font-medium text-xs flex items-center justify-center transition-colors border ${
               isDarkMode 
                 ? 'bg-amber-400/15 text-amber-400 hover:bg-amber-400/25 border-[#3f3f46]' 
                 : 'text-gray-700 bg-white hover:bg-gray-100 border-gray-300'
             }`}
             title={isDarkMode ? "Светлая тема доски (D)" : "Тёмная тема доски (D)"}
           >
-            {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            {isDarkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
           </button>
         )}
 
-        <div className={`h-6 w-px mx-1 transition-colors ${isDarkMode ? 'bg-[#3f3f46]' : 'bg-gray-300'}`} />
+        <div className={`h-4.5 w-px mx-0.5 transition-colors ${isDarkMode ? 'bg-[#3f3f46]' : 'bg-gray-300'}`} />
 
         <button 
           onClick={handleOpenClick}
-          className={`px-3 py-2 rounded-md font-medium text-sm flex items-center gap-2 transition-colors border ${
+          className={`px-2.5 py-1 rounded font-medium text-xs flex items-center gap-1.5 transition-colors border ${
             isDarkMode 
               ? 'text-gray-200 bg-[#28282e] hover:bg-[#32323a] border-[#3f3f46]' 
               : 'text-gray-700 bg-white hover:bg-gray-100 border-gray-300'
           }`}
           title="Импортировать JSON проект"
         >
-          <FolderOpen className="w-4 h-4" />
+          <FolderOpen className="w-3.5 h-3.5" />
           Импорт
         </button>
         <input 

@@ -27,13 +27,14 @@ interface WhiteboardProps {
   onSelectTool?: (tool: ToolType) => void;
 }
 
+let measureCtx: CanvasRenderingContext2D | null = null;
+
 interface TextInputState {
     x: number;
     y: number; // World coords
     value: string;
     color: string;
     fontSize: number;
-    width: number; // World coords width
 }
 
 // Maximum undo/redo states to retain in memory (prevents unbounded memory growth)
@@ -136,7 +137,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   const selectedIndicesRef = useRef<Set<number>>(new Set());
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const isDraggingSelectionRef = useRef(false);
-  const isResizingTextRef = useRef(false);
   
   // Marquee Selection Refs
   const isSelectingRef = useRef(false);
@@ -145,6 +145,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
   // Text Tool State
   const [activeTextInput, setActiveTextInput] = useState<TextInputState | null>(null);
+  const activeTextInputRef = useRef<TextInputState | null>(null);
+  activeTextInputRef.current = activeTextInput;
+  const textCreationTimeRef = useRef<number>(0);
+  const [caretIndex, setCaretIndex] = useState<number>(0);
 
   // Code Blocks State
   const [codeBlocks, setCodeBlocks] = useState<CodeBlockItem[]>([]);
@@ -245,8 +249,22 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           if (stroke.textWidth) {
               return { w: stroke.textWidth, h: lines.length * fontSize * 1.2 };
           }
-          const maxLineLength = Math.max(...lines.map(l => l.length), 1);
-          return { w: maxLineLength * fontSize * 0.6, h: lines.length * fontSize * 1.2 };
+          let maxW = 0;
+          if (typeof document !== 'undefined') {
+              if (!measureCtx) {
+                  const c = document.createElement('canvas');
+                  measureCtx = c.getContext('2d');
+              }
+              if (measureCtx) {
+                  measureCtx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+                  maxW = Math.max(...lines.map(l => measureCtx!.measureText(l).width), 10);
+              }
+          }
+          if (!maxW) {
+              const maxLineLength = Math.max(...lines.map(l => l.length), 1);
+              maxW = maxLineLength * fontSize * 0.6;
+          }
+          return { w: maxW, h: lines.length * fontSize * 1.2 };
       }
       return { w: stroke.width, h: stroke.height || stroke.width };
   };
@@ -1112,7 +1130,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
              !!isRotatingGroupRef.current ||
              !!isResizingGroupRef.current ||
              isSelectingRef.current || 
-             !!isResizingTextRef.current ||
              eraserTrailOpacityRef.current > 0;
     }
   }));
@@ -1542,15 +1559,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
   // --- Handlers ---
   const handleFinishText = useCallback(() => {
-      if (activeTextInput && activeTextInput.value.trim().length > 0) {
+      const currentInput = activeTextInputRef.current;
+      if (currentInput && currentInput.value.trim().length > 0) {
           const newStroke: Stroke = {
               id: `s_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
               tool: 'text',
-              points: [{ x: activeTextInput.x, y: activeTextInput.y }],
-              color: activeTextInput.color,
-              width: activeTextInput.fontSize,
-              text: activeTextInput.value,
-              textWidth: activeTextInput.width > 50 ? activeTextInput.width : undefined,
+              points: [{ x: currentInput.x, y: currentInput.y }],
+              color: currentInput.color,
+              width: currentInput.fontSize,
+              text: currentInput.value,
               updatedAt: Date.now()
           };
           strokesRef.current = [...strokesRef.current, newStroke];
@@ -1559,7 +1576,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           render();
       }
       setActiveTextInput(null);
-  }, [activeTextInput, onStrokeAdded, render]);
+      activeTextInputRef.current = null;
+      setCaretIndex(0);
+  }, [onStrokeAdded, render]);
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     const coords = getCoords(e);
@@ -1595,21 +1614,36 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     }
 
     if (tool === 'text') {
-        if (activeTextInput) handleFinishText();
-        else {
-            setActiveTextInput({ x: worldPos.x, y: worldPos.y, value: '', color, fontSize: strokeWidth * 4 + 12, width: 0 });
-            setTimeout(() => textInputRef.current?.focus(), 10);
+        if ('button' in e && e.button !== 0) return;
+        if (e.cancelable) e.preventDefault();
+
+        // If clicking on board while an active text input exists
+        if (activeTextInputRef.current) {
+            if (activeTextInputRef.current.value.trim().length > 0) {
+                handleFinishText();
+            }
         }
+
+        const initialTextState: TextInputState = {
+            x: worldPos.x,
+            y: worldPos.y,
+            value: '',
+            color,
+            fontSize: strokeWidth * 4 + 12
+        };
+        textCreationTimeRef.current = Date.now();
+        setActiveTextInput(initialTextState);
+        activeTextInputRef.current = initialTextState;
+        setCaretIndex(0);
+
+        requestAnimationFrame(() => {
+            textInputRef.current?.focus();
+        });
+        setTimeout(() => {
+            textInputRef.current?.focus();
+        }, 30);
         return;
-    } else if (activeTextInput) {
-        const inputScreenPos = worldToScreen(activeTextInput.x, activeTextInput.y);
-        const inputWidth = activeTextInput.width > 0 ? activeTextInput.width * scaleRef.current : (textInputRef.current?.offsetWidth || 0);
-        const handleX = inputScreenPos.x + inputWidth;
-        const handleY = inputScreenPos.y + (textInputRef.current?.offsetHeight || 0) / 2;
-        if (Math.sqrt((coords.x - handleX)**2 + (coords.y - handleY)**2) < 20) {
-            isResizingTextRef.current = true;
-            return;
-        }
+    } else if (activeTextInputRef.current) {
         handleFinishText();
     }
 
@@ -1995,10 +2029,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         return;
     }
 
-    if (isResizingTextRef.current && activeTextInput) {
-        setActiveTextInput(prev => prev ? { ...prev, width: Math.max(50, screenToWorld(coords.x, coords.y).x - activeTextInput.x) } : null);
-        return;
-    }
+
     if (tool === 'eraser') {
         eraserCurrentPosRef.current = worldPos;
         if (isDrawingRef.current) {
@@ -2176,7 +2207,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         render();
         return;
     }
-    if (isResizingTextRef.current) { isResizingTextRef.current = false; return; }
+
     if (tool === 'eraser' && isDrawingRef.current) {
         isDrawingRef.current = false;
         if (hasErasedRef.current) pushHistory();
@@ -2325,10 +2356,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
       for (let i = strokesRef.current.length - 1; i >= 0; i--) {
           const s = strokesRef.current[i];
-          if (s.isLocked) continue; // Locked objects CANNOT be erased!
+          if (s.isLocked || s.tool === 'image') continue; // Locked objects and images CANNOT be erased!
           let hit = false;
 
-          if (shapeTools.includes(s.tool) || s.tool === 'text' || s.tool === 'image') {
+          if (shapeTools.includes(s.tool) || s.tool === 'text') {
               hit = hitTest(p, s);
           } else if (s.tool === 'dotted-line') {
               if (s.points.length === 0) {
@@ -2577,7 +2608,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   }, [triggerUndo, triggerRedo, render, onHistoryChange]);
 
   const getCursorStyle = () => {
-    if (isResizingTextRef.current) return 'cursor-ew-resize';
     if (tool === 'code') return 'cursor-code';
     if (shapeTools.includes(tool) || tool === 'dotted-line' || tool === 'text') return 'cursor-crosshair';
     if (tool === 'pen') return 'cursor-pen';
@@ -2768,18 +2798,128 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         </div>
       )}
 
-      {activeTextInput && (
-          <div className="absolute z-40 pointer-events-none" style={{ left: inputScreenPos.x, top: inputScreenPos.y }}>
-              <textarea ref={textInputRef} className="bg-transparent border border-blue-400 outline-none p-0 m-0 overflow-hidden resize-none leading-tight pointer-events-auto" style={{ color: activeTextInput.color, fontSize: `${activeTextInput.fontSize * scaleRef.current}px`, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', minWidth: '50px', minHeight: '24px', width: activeTextInput.width > 0 ? `${activeTextInput.width * scaleRef.current}px` : 'auto', height: 'auto' }} value={activeTextInput.value} onChange={(e) => {
-                    setActiveTextInput({ ...activeTextInput, value: e.target.value });
-                    if (activeTextInput.width <= 0) { e.target.style.width = 'auto'; e.target.style.width = (e.target.scrollWidth) + 'px'; }
-                    e.target.style.height = 'auto'; e.target.style.height = (e.target.scrollHeight) + 'px';
-                }} onBlur={() => { if (!isResizingTextRef.current) handleFinishText(); }} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleFinishText(); } if (e.key === 'Escape') setActiveTextInput(null); }} />
-              <div className="absolute top-0 bottom-0 -right-2 w-4 cursor-ew-resize flex items-center justify-center pointer-events-auto" onMouseDown={(e) => { e.stopPropagation(); isResizingTextRef.current = true; }}>
-                  <div className="w-1.5 h-6 bg-blue-500 rounded-full shadow-sm" />
+      {activeTextInput && (() => {
+          const text = activeTextInput.value || '';
+          const currentCaret = Math.min(caretIndex, text.length);
+          const textBefore = text.slice(0, currentCaret);
+          const linesBefore = textBefore.split('\n');
+          const currentLineIndex = linesBefore.length - 1;
+          const currentLineTextBefore = linesBefore[currentLineIndex];
+
+          const scaledFontSize = activeTextInput.fontSize * scaleRef.current;
+          const fontStr = `${scaledFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+          const allLines = text.split('\n');
+
+          let currentLineWidth = 0;
+          let charWidth = Math.max(8, scaledFontSize * 0.58);
+          let maxLineWidth = 0;
+
+          if (typeof document !== 'undefined') {
+              if (!measureCtx) {
+                  const c = document.createElement('canvas');
+                  measureCtx = c.getContext('2d');
+              }
+              if (measureCtx) {
+                  measureCtx.font = fontStr;
+                  currentLineWidth = measureCtx.measureText(currentLineTextBefore).width;
+                  charWidth = (measureCtx.measureText('W').width * 0.72) || charWidth;
+                  maxLineWidth = Math.max(...allLines.map(l => measureCtx!.measureText(l).width), 0);
+              }
+          }
+
+          const lineHeight = scaledFontSize * 1.2;
+          const cursorUnderlineLeft = currentLineWidth;
+          const cursorUnderlineTop = currentLineIndex * lineHeight + scaledFontSize * 1.05;
+
+          const updateCaret = (el: HTMLTextAreaElement) => {
+              setCaretIndex(el.selectionStart || 0);
+          };
+
+          return (
+              <div 
+                  className="absolute z-40 pointer-events-none" 
+                  style={{ left: `${inputScreenPos.x}px`, top: `${inputScreenPos.y}px` }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+              >
+                  <style>{`
+                      @keyframes cursorUnderlineBlink {
+                          0%, 100% { opacity: 1; }
+                          50% { opacity: 0.15; }
+                      }
+                  `}</style>
+                  
+                  {/* Thin line the width of one character directly under text cursor */}
+                  <div
+                      className="absolute pointer-events-none transition-[left,top] duration-75"
+                      style={{
+                          left: `${cursorUnderlineLeft}px`,
+                          top: `${cursorUnderlineTop}px`,
+                          width: `${Math.max(10, charWidth)}px`,
+                          height: '2.5px',
+                          backgroundColor: activeTextInput.color || (isDarkMode ? '#ffffff' : '#000000'),
+                          borderRadius: '1px',
+                          boxShadow: isDarkMode ? '0 0 3px rgba(255,255,255,0.3)' : '0 0 3px rgba(0,0,0,0.2)',
+                          animation: 'cursorUnderlineBlink 1.1s ease-in-out infinite',
+                          zIndex: 50
+                      }}
+                  />
+
+                  {/* Boundless text editor: no borders, unlimited width, Enter for newline */}
+                  <textarea
+                      ref={textInputRef}
+                      className="bg-transparent border-0 outline-none p-0 m-0 overflow-hidden resize-none pointer-events-auto leading-[1.2] shadow-none select-text cursor-text"
+                      style={{
+                          color: activeTextInput.color || (isDarkMode ? '#ffffff' : '#000000'),
+                          fontSize: `${scaledFontSize}px`,
+                          lineHeight: 1.2,
+                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                          whiteSpace: 'pre',
+                          wordBreak: 'normal',
+                          width: `${Math.max(maxLineWidth + charWidth * 3, 80)}px`,
+                          height: `${Math.max(allLines.length * lineHeight + 12, lineHeight + 12)}px`,
+                          minHeight: `${lineHeight}px`,
+                          caretColor: activeTextInput.color || (isDarkMode ? '#ffffff' : '#000000'),
+                          userSelect: 'text',
+                          WebkitUserSelect: 'text',
+                      }}
+                      value={activeTextInput.value}
+                      autoFocus
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
+                      onChange={(e) => {
+                          const val = e.target.value;
+                          const nextState = { ...activeTextInput, value: val };
+                          setActiveTextInput(nextState);
+                          activeTextInputRef.current = nextState;
+                          updateCaret(e.target);
+                      }}
+                      onSelect={(e) => updateCaret(e.currentTarget)}
+                      onClick={(e) => {
+                          e.stopPropagation();
+                          updateCaret(e.currentTarget);
+                      }}
+                      onKeyUp={(e) => updateCaret(e.currentTarget)}
+                      onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Escape') {
+                              e.preventDefault();
+                              handleFinishText();
+                          }
+                          // Enter produces a newline naturally (multiline text)
+                      }}
+                      onBlur={() => {
+                          // Prevent immediate unmount if blur fired right upon creation
+                          if (Date.now() - textCreationTimeRef.current < 350) {
+                              textInputRef.current?.focus();
+                              return;
+                          }
+                          handleFinishText();
+                      }}
+                  />
               </div>
-          </div>
-      )}
+          );
+      })()}
     </div>
   );
 });

@@ -478,8 +478,6 @@ const App: React.FC = () => {
         canRedo={canRedo} 
         toggle3DPanel={toggle3DPanel} 
         is3DPanelOpen={is3DPanelOpen} 
-        onAISolve={handleAISolve} 
-        isAISolving={isAISolving} 
         isVisible={isUIVisible}
         isDarkMode={isDarkMode}
       />
