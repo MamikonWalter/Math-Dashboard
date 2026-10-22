@@ -5,7 +5,6 @@ import ColorPicker from './components/ColorPicker';
 import Whiteboard from './components/Whiteboard';
 import HistoryControls from './components/HistoryControls';
 import EraserProperties from './components/EraserProperties';
-import ShapeProperties from './components/ShapeProperties';
 import ThreeDShapesPanel from './components/ThreeDShapesPanel';
 import ZoomControls from './components/ZoomControls';
 import AIAssistant from './components/AIAssistant';
@@ -504,12 +503,6 @@ const App: React.FC = () => {
         setTool={handleSetTool} 
         isDarkMode={isDarkMode}
       />
-      <ShapeProperties 
-        isVisible={isUIVisible && (isAnyShapeTool || (currentTool === 'cursor' && isShapeSelected))} 
-        size={shapeSize} 
-        setSize={setShapeSize} 
-        isDarkMode={isDarkMode}
-      />
       <HistoryControls 
         onUndo={handleUndo} 
         onRedo={handleRedo} 
@@ -553,7 +546,7 @@ const App: React.FC = () => {
         onShapeSelect={handleShapeSelect}
         onStrokeAdded={() => persistBoard()}
         onStrokesChanged={(strokes) => persistBoard(strokes)}
-        onSelectTool={setCurrentTool}
+        onSelectTool={handleSetTool}
         onCodeBlockCreated={(block) => {
           const currentBlocks = whiteboardRef.current?.getSnapshot()?.codeBlocks || [];
           const updatedBlocks = [...currentBlocks.filter(b => b.id !== block.id), block];

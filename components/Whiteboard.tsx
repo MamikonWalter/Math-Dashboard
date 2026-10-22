@@ -1794,6 +1794,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         selectedIndicesRef.current.add(strokesRef.current.length - 1);
         if (onShapeSelect) onShapeSelect(shapeSize);
         if (onStrokeAdded) onStrokeAdded(shapeStroke);
+        if (onSelectTool) onSelectTool('cursor');
         pushHistory();
         render();
         return; 
