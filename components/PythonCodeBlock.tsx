@@ -329,235 +329,187 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
     }
   };
 
-  // Adjust window height to fit code content perfectly (green dot action)
-  const handleAutoFitContent = () => {
-    const lines = block.code.split('\n').length;
-    const calculatedHeight = Math.max(160, Math.min(800, lines * codeLineHeight + 85));
-    onUpdate({ height: calculatedHeight, isMinimized: false });
-  };
+  // Python Keywords & Syntax regexes
+  const keywords = /\b(def|class|import|from|as|return|if|elif|else|while|for|in|try|except|finally|raise|with|yield|lambda|pass|break|continue|global|nonlocal|assert|async|await|match|case|del)\b/g;
+  const logicOps = /\b(and|or|not|is)\b/g;
+  const builtins = /\b(print|len|range|int|float|str|list|dict|set|tuple|bool|sum|min|max|abs|round|enumerate|zip|map|filter|open|input|type|sorted|reversed|any|all|isinstance|issubclass|id|super|help|dir)\b/g;
+  const literals = /\b(True|False|None)\b/g;
+  const specialVars = /\b(self|cls)\b/g;
 
-  // Python Syntax Highlighting Engine
-  const renderHighlightedCode = (
-    code: string, 
-    fontSize: number, 
-    lineHeight: number, 
-    gutterW: number, 
-    lineNumFontSize: number,
-    gutterPR: number
-  ) => {
-    const lines = code.split('\n');
+  function highlightTokens(text: string, keyPrefix: string): React.ReactNode {
+    const tokenRegex = /(@[a-zA-Z_][a-zA-Z0-9_.]*|\b[a-zA-Z_][a-zA-Z0-9_]*\b|\b\d+(?:\.\d+)?\b|[^\s\w]+|\s+)/g;
+    const tokens = text.match(tokenRegex) || [text];
 
-    // Python Keywords
-    const keywords = /\b(def|class|import|from|as|return|if|elif|else|while|for|in|try|except|finally|raise|with|yield|lambda|pass|break|continue|global|nonlocal|assert|async|await|match|case|del)\b/g;
-    const logicOps = /\b(and|or|not|is)\b/g;
-    const builtins = /\b(print|len|range|int|float|str|list|dict|set|tuple|bool|sum|min|max|abs|round|enumerate|zip|map|filter|open|input|type|sorted|reversed|any|all|isinstance|issubclass|id|super|help|dir)\b/g;
-    const literals = /\b(True|False|None)\b/g;
-    const specialVars = /\b(self|cls)\b/g;
+    return tokens.map((token, idx) => {
+      const key = `${keyPrefix}-${idx}`;
 
-    return lines.map((line, lineIdx) => {
-      // Check for Python comment: '#' outside of strings
-      const commentIdx = line.indexOf('#');
-      let codePart = commentIdx !== -1 ? line.substring(0, commentIdx) : line;
-      const commentPart = commentIdx !== -1 ? line.substring(commentIdx) : '';
-
-      // Tokenize strings first: single quote, double quote, triple quotes, f-strings, r-strings
-      const parts: React.ReactNode[] = [];
-      let lastIndex = 0;
-
-      const stringRegex = /(?:f|r|b|fr|rf)?(?:"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g;
-      let match;
-
-      while ((match = stringRegex.exec(codePart)) !== null) {
-        if (match.index > lastIndex) {
-          parts.push(highlightTokens(codePart.substring(lastIndex, match.index), `${lineIdx}-${lastIndex}`));
-        }
-        parts.push(
-          <span 
-            key={`${lineIdx}-str-${match.index}`} 
-            className={isDarkMode ? 'text-emerald-400 font-normal' : 'text-emerald-600 font-normal'}
-          >
-            {match[0]}
+      if (token.startsWith('@')) {
+        return (
+          <span key={key} className={isDarkMode ? 'text-yellow-400 font-medium' : 'text-amber-600 font-medium'}>
+            {token}
           </span>
         );
-        lastIndex = match.index + match[0].length;
       }
 
-      if (lastIndex < codePart.length) {
-        parts.push(highlightTokens(codePart.substring(lastIndex), `${lineIdx}-${lastIndex}`));
+      if (keywords.test(token)) {
+        keywords.lastIndex = 0;
+        return (
+          <span key={key} className={isDarkMode ? 'text-purple-400 font-semibold' : 'text-purple-600 font-semibold'}>
+            {token}
+          </span>
+        );
       }
 
-      return (
-        <div key={lineIdx} className="table-row" style={{ height: `${lineHeight}px`, lineHeight: `${lineHeight}px` }}>
-          {/* Line number gutter */}
-          <span 
-            className={`table-cell text-right select-none font-mono transition-colors ${
-              isDarkMode ? 'text-zinc-500/70 border-r border-zinc-800/80 bg-zinc-950/20' : 'text-slate-400 border-r border-slate-200/80 bg-slate-50/60'
-            }`}
-            style={{ 
-              width: `${gutterW}px`, 
-              fontSize: `${lineNumFontSize}px`,
-              paddingRight: `${gutterPR}px`,
-              lineHeight: `${lineHeight}px`
-            }}
-          >
-            {lineIdx + 1}
+      if (logicOps.test(token)) {
+        logicOps.lastIndex = 0;
+        return (
+          <span key={key} className={isDarkMode ? 'text-rose-400 font-medium' : 'text-rose-600 font-medium'}>
+            {token}
           </span>
-          {/* Highlighted text line */}
-          <span 
-            className="table-cell whitespace-pre font-mono pl-3"
-            style={{ fontSize: `${fontSize}px`, lineHeight: `${lineHeight}px` }}
-          >
-            {parts}
-            {commentPart && (
-              <span className={`italic ${isDarkMode ? 'text-zinc-500' : 'text-slate-400'}`}>
-                {commentPart}
-              </span>
-            )}
-            {line === '' && ' '}
+        );
+      }
+
+      if (builtins.test(token)) {
+        builtins.lastIndex = 0;
+        return (
+          <span key={key} className={isDarkMode ? 'text-sky-400 font-medium' : 'text-sky-600 font-medium'}>
+            {token}
           </span>
-        </div>
-      );
+        );
+      }
+
+      if (literals.test(token)) {
+        literals.lastIndex = 0;
+        return (
+          <span key={key} className={isDarkMode ? 'text-amber-300 font-semibold' : 'text-amber-700 font-semibold'}>
+            {token}
+          </span>
+        );
+      }
+
+      if (specialVars.test(token)) {
+        specialVars.lastIndex = 0;
+        return (
+          <span key={key} className={isDarkMode ? 'text-rose-400/90 italic' : 'text-rose-700 italic'}>
+            {token}
+          </span>
+        );
+      }
+
+      if (/^\d+(\.\d+)?$/.test(token)) {
+        return (
+          <span key={key} className={isDarkMode ? 'text-orange-400' : 'text-orange-600'}>
+            {token}
+          </span>
+        );
+      }
+
+      if (/^(==|!=|<=|>=|<|>|\+|-|\*|\/|\*\*|\/\/|%|=|->|:|\+=|-=|\*=|\/=)$/.test(token)) {
+        return (
+          <span key={key} className={isDarkMode ? 'text-indigo-400 font-medium' : 'text-indigo-600 font-medium'}>
+            {token}
+          </span>
+        );
+      }
+
+      if (/^[(){}[\]]$/.test(token)) {
+        return (
+          <span key={key} className={isDarkMode ? 'text-zinc-300' : 'text-slate-700'}>
+            {token}
+          </span>
+        );
+      }
+
+      return <span key={key}>{token}</span>;
     });
+  }
 
-    function highlightTokens(text: string, keyPrefix: string): React.ReactNode {
-      // Split into word tokens, numbers, decorators, operators, punctuation
-      const tokenRegex = /(@[a-zA-Z_][a-zA-Z0-9_.]*|\b[a-zA-Z_][a-zA-Z0-9_]*\b|\b\d+(?:\.\d+)?\b|[^\s\w]+|\s+)/g;
-      const tokens = text.match(tokenRegex) || [text];
+  const renderLineTokens = (line: string, lineIdx: number) => {
+    const commentIdx = line.indexOf('#');
+    let codePart = commentIdx !== -1 ? line.substring(0, commentIdx) : line;
+    const commentPart = commentIdx !== -1 ? line.substring(commentIdx) : '';
 
-      return tokens.map((token, idx) => {
-        const key = `${keyPrefix}-${idx}`;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
 
-        // Decorators: @property, @staticmethod, etc.
-        if (token.startsWith('@')) {
-          return (
-            <span key={key} className={isDarkMode ? 'text-yellow-400 font-medium' : 'text-amber-600 font-medium'}>
-              {token}
-            </span>
-          );
-        }
+    const stringRegex = /(?:f|r|b|fr|rf)?(?:"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g;
+    let match;
 
-        // Keywords
-        if (keywords.test(token)) {
-          keywords.lastIndex = 0;
-          return (
-            <span key={key} className={isDarkMode ? 'text-purple-400 font-semibold' : 'text-purple-600 font-semibold'}>
-              {token}
-            </span>
-          );
-        }
-
-        // Logical operators: and, or, not, is
-        if (logicOps.test(token)) {
-          logicOps.lastIndex = 0;
-          return (
-            <span key={key} className={isDarkMode ? 'text-rose-400 font-medium' : 'text-rose-600 font-medium'}>
-              {token}
-            </span>
-          );
-        }
-
-        // Built-ins: print, len, range, int, float, str, etc.
-        if (builtins.test(token)) {
-          builtins.lastIndex = 0;
-          return (
-            <span key={key} className={isDarkMode ? 'text-sky-400 font-medium' : 'text-sky-600 font-medium'}>
-              {token}
-            </span>
-          );
-        }
-
-        // Literals: True, False, None
-        if (literals.test(token)) {
-          literals.lastIndex = 0;
-          return (
-            <span key={key} className={isDarkMode ? 'text-amber-300 font-semibold' : 'text-amber-700 font-semibold'}>
-              {token}
-            </span>
-          );
-        }
-
-        // self, cls
-        if (specialVars.test(token)) {
-          specialVars.lastIndex = 0;
-          return (
-            <span key={key} className={isDarkMode ? 'text-rose-400/90 italic' : 'text-rose-700 italic'}>
-              {token}
-            </span>
-          );
-        }
-
-        // Numbers: 42, 3.14
-        if (/^\d+(\.\d+)?$/.test(token)) {
-          return (
-            <span key={key} className={isDarkMode ? 'text-orange-400' : 'text-orange-600'}>
-              {token}
-            </span>
-          );
-        }
-
-        // Python punctuation & operators
-        if (/^(==|!=|<=|>=|<|>|\+|-|\*|\/|\*\*|\/\/|%|=|->|:|\+=|-=|\*=|\/=)$/.test(token)) {
-          return (
-            <span key={key} className={isDarkMode ? 'text-indigo-400 font-medium' : 'text-indigo-600 font-medium'}>
-              {token}
-            </span>
-          );
-        }
-
-        // Parentheses, brackets, braces
-        if (/^[(){}[\]]$/.test(token)) {
-          return (
-            <span key={key} className={isDarkMode ? 'text-zinc-300' : 'text-slate-700'}>
-              {token}
-            </span>
-          );
-        }
-
-        return <span key={key}>{token}</span>;
-      });
+    while ((match = stringRegex.exec(codePart)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(highlightTokens(codePart.substring(lastIndex, match.index), `${lineIdx}-${lastIndex}`));
+      }
+      parts.push(
+        <span 
+          key={`${lineIdx}-str-${match.index}`} 
+          className={isDarkMode ? 'text-emerald-400 font-normal' : 'text-emerald-600 font-normal'}
+        >
+          {match[0]}
+        </span>
+      );
+      lastIndex = match.index + match[0].length;
     }
+
+    if (lastIndex < codePart.length) {
+      parts.push(highlightTokens(codePart.substring(lastIndex), `${lineIdx}-${lastIndex}`));
+    }
+
+    return (
+      <>
+        {parts}
+        {commentPart && (
+          <span className={`italic ${isDarkMode ? 'text-zinc-500' : 'text-slate-400'}`}>
+            {commentPart}
+          </span>
+        )}
+      </>
+    );
   };
 
   const lines = (block.code || '').split('\n');
   const lineCount = Math.max(1, lines.length);
   const isMinimized = block.isMinimized ?? false;
 
-  // Visual length of the longest line (expanding tabs to 4 spaces)
+  // Proportional font scaling based on block width (base reference: 420px)
+  const baseRefWidth = 420;
+  const userWidth = Math.max(260, block.width || baseRefWidth);
+  const scaleRatio = Math.max(0.65, Math.min(3.0, userWidth / baseRefWidth));
+
+  const codeFontSize = Math.round(13 * scaleRatio * 10) / 10;
+  const codeLineHeight = Math.round(20 * scaleRatio * 10) / 10;
+  const lineNumberFontSize = Math.round(11 * scaleRatio * 10) / 10;
+  const gutterWidth = Math.round((lineCount >= 100 ? 46 : 38) * scaleRatio);
+  const editorPaddingTop = Math.round(8 * scaleRatio);
+  const editorPaddingBottom = Math.round(8 * scaleRatio);
+  const editorPaddingLeft = Math.round(12 * scaleRatio);
+  const editorPaddingRight = Math.round(20 * scaleRatio);
+  const footerFontSize = Math.round(10.5 * Math.min(1.4, Math.max(0.8, scaleRatio)) * 10) / 10;
+  const headerHeight = Math.round(28 * Math.min(1.4, Math.max(0.8, scaleRatio)));
+  const footerHeight = Math.round(24 * Math.min(1.4, Math.max(0.8, scaleRatio)));
+
+  const charWidth = codeFontSize * 0.605;
   const maxVisualLength = lines.reduce((max, line) => {
     const expanded = line.replace(/\t/g, '    ');
     return Math.max(max, expanded.length);
   }, 0);
-
-  // Typography & Layout parameters
-  const baseWidth = Math.max(380, block.width || 380);
-  const codeFontSize = 13;
-  const codeLineHeight = 20;
-  const gutterWidth = lineCount >= 100 ? 42 : 36;
-  const gutterPadRight = 6;
-  const lineNumberFontSize = 10.5;
-  const editorPaddingTop = 8;
-  const editorPaddingBottom = 8;
-  const footerFontSize = 10.5;
-  const headerHeight = 28; // h-7
-  const footerHeight = 24; // h-6
-
-  // Horizontal text width calculation:
-  // Monospace char width at 13px is ~7.82px, we use 8.05px for safety margin
-  const charWidth = 8.05;
   const textContentWidth = Math.ceil(maxVisualLength * charWidth);
-  const gutterTotalWidth = gutterWidth + 12; // gutter + 12px padding before text
-  const paddingRight = 28; // right breathing space
-  const neededWidth = gutterTotalWidth + textContentWidth + paddingRight;
-  const effectiveWidth = Math.max(baseWidth, neededWidth);
+  const neededWidth = gutterWidth + editorPaddingLeft + textContentWidth + editorPaddingRight;
+  const effectiveWidth = Math.max(userWidth, neededWidth);
 
-  // Vertical height calculation:
-  // Automatically grows with line count, no vertical scrollbar will ever be needed
   const editorContentHeight = lineCount * codeLineHeight + editorPaddingTop + editorPaddingBottom;
-  const effectiveHeight = isMinimized ? headerHeight : (headerHeight + editorContentHeight + footerHeight);
+  const minBlockHeight = headerHeight + editorContentHeight + footerHeight;
+  const effectiveHeight = isMinimized ? headerHeight : Math.max(minBlockHeight, block.height || minBlockHeight);
+
+  // Adjust window height to fit code content perfectly (green dot action)
+  const handleAutoFitContent = () => {
+    const linesCount = block.code.split('\n').length;
+    const calculatedHeight = linesCount * codeLineHeight + editorPaddingTop + editorPaddingBottom + headerHeight + footerHeight;
+    onUpdate({ height: calculatedHeight, isMinimized: false });
+  };
 
   // Synchronize effective dimensions with parent for canvas export & hit-testing
   useEffect(() => {
-    if (Math.abs((block.width || 0) - effectiveWidth) > 1 || Math.abs((block.height || 0) - effectiveHeight) > 1) {
+    if (Math.abs((block.width || 0) - effectiveWidth) > 2 || Math.abs((block.height || 0) - effectiveHeight) > 2) {
       onUpdate({ width: effectiveWidth, height: effectiveHeight });
     }
   }, [effectiveWidth, effectiveHeight]);
@@ -569,7 +521,7 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
         e.stopPropagation();
         onFocus();
       }}
-      className={`absolute rounded-xl overflow-hidden transition-all duration-200 flex flex-col select-none codeblock-no-scroll ${
+      className={`absolute rounded-xl overflow-hidden flex flex-col select-none codeblock-no-scroll transition-[box-shadow,border-color] duration-150 ${
         isDarkMode 
           ? 'bg-[#141518] text-zinc-100 shadow-2xl shadow-black/80' 
           : 'bg-white text-slate-900 shadow-xl shadow-slate-400/30'
@@ -590,7 +542,8 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
       <div
         onMouseDown={onDragStart}
         onTouchStart={onDragStart}
-        className={`px-3 py-1 flex items-center justify-between cursor-move touch-none border-b border-black/5 dark:border-white/5 transition-colors flex-shrink-0 h-7 ${
+        style={{ height: `${headerHeight}px` }}
+        className={`px-3 flex items-center justify-between cursor-move touch-none border-b border-black/5 dark:border-white/5 flex-shrink-0 ${
           isDarkMode 
             ? 'bg-[#1c1d22]' 
             : 'bg-slate-100/90'
@@ -647,33 +600,72 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
 
       {/* Editor Body */}
       {!isMinimized && (
-        <div className="flex flex-col flex-1 min-h-0 overflow-hidden codeblock-no-scroll">
-          <div 
-            className={`relative flex-1 overflow-hidden codeblock-no-scroll ${
-              isDarkMode ? 'bg-[#141518]' : 'bg-[#fafafa]'
+        <div 
+          className="flex flex-1 min-h-0 overflow-hidden relative"
+          style={{ height: `${editorContentHeight}px` }}
+        >
+          {/* Left Column: Gutter Line Numbers */}
+          <div
+            className={`select-none flex flex-col items-end border-r flex-shrink-0 font-mono transition-colors ${
+              isDarkMode 
+                ? 'bg-[#18191e]/80 border-white/5 text-zinc-500' 
+                : 'bg-slate-50/80 border-black/5 text-slate-400'
             }`}
             style={{
-              height: `${editorContentHeight}px`
+              width: `${gutterWidth}px`,
+              paddingTop: `${editorPaddingTop}px`,
+              paddingBottom: `${editorPaddingBottom}px`,
+              paddingRight: `${Math.round(8 * scaleRatio)}px`,
             }}
           >
+            {lines.map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  height: `${codeLineHeight}px`,
+                  lineHeight: `${codeLineHeight}px`,
+                  fontSize: `${lineNumberFontSize}px`,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                }}
+                className="tabular-nums"
+              >
+                {i + 1}
+              </div>
+            ))}
+          </div>
+
+          {/* Right Column: Code Text Area with Highlighted Background and Transparent Interactive Textarea */}
+          <div className="relative flex-1 min-w-0 h-full overflow-hidden">
             {/* Syntax Highlighted View Underneath */}
             <pre
               ref={preRef}
               aria-hidden="true"
-              className="absolute inset-0 m-0 overflow-hidden pointer-events-none font-mono whitespace-pre select-none codeblock-no-scroll"
+              className="absolute inset-0 m-0 overflow-hidden pointer-events-none whitespace-pre select-none font-mono"
               style={{
                 tabSize: 4,
                 paddingTop: `${editorPaddingTop}px`,
                 paddingBottom: `${editorPaddingBottom}px`,
+                paddingLeft: `${editorPaddingLeft}px`,
+                paddingRight: `${editorPaddingRight}px`,
                 fontSize: `${codeFontSize}px`,
                 lineHeight: `${codeLineHeight}px`,
-                fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace',
-                overflow: 'hidden',
-                scrollbarWidth: 'none',
-                msOverflowStyle: 'none'
+                fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace',
+                boxSizing: 'border-box'
               }}
             >
-              {renderHighlightedCode(block.code, codeFontSize, codeLineHeight, gutterWidth, lineNumberFontSize, gutterPadRight)}
+              {lines.map((line, lineIdx) => (
+                <div
+                  key={lineIdx}
+                  style={{
+                    height: `${codeLineHeight}px`,
+                    lineHeight: `${codeLineHeight}px`,
+                    fontSize: `${codeFontSize}px`,
+                  }}
+                >
+                  {renderLineTokens(line, lineIdx)}
+                  {line === '' && '\u00A0'}
+                </div>
+              ))}
             </pre>
 
             {/* Editable Textarea Layer on Top */}
@@ -692,59 +684,58 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
               autoCapitalize="off"
               autoComplete="off"
               autoCorrect="off"
-              className={`absolute inset-0 w-full h-full m-0 bg-transparent text-transparent outline-none resize-none font-mono whitespace-pre overflow-hidden z-10 select-text codeblock-no-scroll ${
+              className={`absolute inset-0 w-full h-full m-0 bg-transparent text-transparent outline-none resize-none font-mono whitespace-pre overflow-hidden z-10 select-text ${
                 isDarkMode 
-                  ? 'caret-blue-400 placeholder:text-zinc-500/80 selection:bg-blue-600/30' 
-                  : 'caret-blue-600 placeholder:text-slate-400 selection:bg-blue-100'
+                  ? 'caret-blue-400 selection:bg-blue-600/30' 
+                  : 'caret-blue-600 selection:bg-blue-100'
               }`}
               style={{
                 tabSize: 4,
                 paddingTop: `${editorPaddingTop}px`,
                 paddingBottom: `${editorPaddingBottom}px`,
-                paddingLeft: `${gutterWidth + 12}px`,
-                paddingRight: '28px',
+                paddingLeft: `${editorPaddingLeft}px`,
+                paddingRight: `${editorPaddingRight}px`,
                 fontSize: `${codeFontSize}px`,
                 lineHeight: `${codeLineHeight}px`,
-                fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace',
-                overflow: 'hidden',
-                scrollbarWidth: 'none',
-                msOverflowStyle: 'none',
-                resize: 'none'
+                fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace',
+                boxSizing: 'border-box'
               }}
               placeholder="# Введите Python код..."
             />
           </div>
+        </div>
+      )}
 
-          {/* Clean Compact Bottom Status Bar */}
+      {/* Clean Compact Bottom Status Bar */}
+      {!isMinimized && (
+        <div 
+          className={`px-2.5 flex items-center justify-between border-t border-black/5 dark:border-white/5 select-none transition-colors flex-shrink-0 ${
+            isDarkMode 
+              ? 'bg-[#18191e] text-zinc-400' 
+              : 'bg-slate-50 text-slate-500'
+          }`}
+          style={{ height: `${footerHeight}px`, fontSize: `${footerFontSize}px` }}
+        >
+          <div className="flex items-center gap-2">
+            <span>{lineCount} {lineCount === 1 ? 'строка' : (lineCount < 5 ? 'строки' : 'строк')}</span>
+            <span className="opacity-30">•</span>
+            <span className="font-mono text-[10px] opacity-70">
+              {cursorPos.line}:{cursorPos.col}
+            </span>
+          </div>
+
+          {/* Resize Grip Handle */}
           <div 
-            className={`px-2.5 py-0.5 flex items-center justify-between border-t border-black/5 dark:border-white/5 select-none transition-colors flex-shrink-0 h-6 ${
-              isDarkMode 
-                ? 'bg-[#18191e] text-zinc-400' 
-                : 'bg-slate-50 text-slate-500'
-            }`}
-            style={{ fontSize: `${footerFontSize}px` }}
+            onMouseDown={onResizeStart}
+            onTouchStart={onResizeStart}
+            className="cursor-nwse-resize p-0.5 hover:text-blue-500 touch-none select-none transition-colors"
+            title="Изменить размер блока"
           >
-            <div className="flex items-center gap-2">
-              <span>{lineCount} {lineCount === 1 ? 'строка' : (lineCount < 5 ? 'строки' : 'строк')}</span>
-              <span className="opacity-30">•</span>
-              <span className="font-mono text-[10px] opacity-70">
-                {cursorPos.line}:{cursorPos.col}
-              </span>
-            </div>
-
-            {/* Resize Grip Handle */}
-            <div 
-              onMouseDown={onResizeStart}
-              onTouchStart={onResizeStart}
-              className="cursor-nwse-resize p-0.5 hover:text-blue-500 touch-none select-none transition-colors"
-              title="Изменить размер блока"
-            >
-              <svg className="w-2.5 h-2.5 opacity-60" viewBox="0 0 10 10" fill="currentColor">
-                <circle cx="8" cy="8" r="1.2" />
-                <circle cx="4.5" cy="8" r="1.2" />
-                <circle cx="8" cy="4.5" r="1.2" />
-              </svg>
-            </div>
+            <svg className="w-2.5 h-2.5 opacity-60" viewBox="0 0 10 10" fill="currentColor">
+              <circle cx="8" cy="8" r="1.2" />
+              <circle cx="4.5" cy="8" r="1.2" />
+              <circle cx="8" cy="4.5" r="1.2" />
+            </svg>
           </div>
         </div>
       )}

@@ -2451,38 +2451,49 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     const handlePointerMove = (e: PointerEvent | MouseEvent) => {
       if (blockDragRef.current) {
         const { blockId, startMouseX, startMouseY, startBlockX, startBlockY } = blockDragRef.current;
-        const dx = (e.clientX - startMouseX) / scaleRef.current;
-        const dy = (e.clientY - startMouseY) / scaleRef.current;
-        pendingDrag = {
-          blockId,
-          x: Math.round(startBlockX + dx),
-          y: Math.round(startBlockY + dy)
-        };
+        const currentScale = scaleRef.current || 1;
+        const dx = (e.clientX - startMouseX) / currentScale;
+        const dy = (e.clientY - startMouseY) / currentScale;
+        const newX = Math.round(startBlockX + dx);
+        const newY = Math.round(startBlockY + dy);
+
+        // Instantaneous direct hardware transform for zero-latency dragging
+        const el = document.getElementById(`python-code-block-${blockId}`);
+        if (el) {
+          const screenPos = worldToScreen(newX, newY);
+          el.style.transform = `translate3d(${screenPos.x}px, ${screenPos.y}px, 0) scale(${currentScale})`;
+        }
+
+        pendingDrag = { blockId, x: newX, y: newY };
         if (animFrameId === null) {
           animFrameId = requestAnimationFrame(() => {
             animFrameId = null;
             if (pendingDrag) {
-              const { blockId: bId, x: newX, y: newY } = pendingDrag;
-              setCodeBlocks(prev => prev.map(b => b.id === bId ? { ...b, x: newX, y: newY } : b));
+              const { blockId: bId, x: finalX, y: finalY } = pendingDrag;
+              const next = codeBlocksRef.current.map(b => b.id === bId ? { ...b, x: finalX, y: finalY } : b);
+              codeBlocksRef.current = next;
+              setCodeBlocks(next);
               pendingDrag = null;
             }
           });
         }
       } else if (blockResizeRef.current) {
         const { blockId, startMouseX, startMouseY, startWidth, startHeight } = blockResizeRef.current;
-        const dw = (e.clientX - startMouseX) / scaleRef.current;
-        const dh = (e.clientY - startMouseY) / scaleRef.current;
-        pendingResize = {
-          blockId,
-          width: Math.max(300, Math.round(startWidth + dw)),
-          height: Math.max(160, Math.round(startHeight + dh))
-        };
+        const currentScale = scaleRef.current || 1;
+        const dw = (e.clientX - startMouseX) / currentScale;
+        const dh = (e.clientY - startMouseY) / currentScale;
+        const newW = Math.max(260, Math.round(startWidth + dw));
+        const newH = Math.max(140, Math.round(startHeight + dh));
+
+        pendingResize = { blockId, width: newW, height: newH };
         if (animFrameId === null) {
           animFrameId = requestAnimationFrame(() => {
             animFrameId = null;
             if (pendingResize) {
-              const { blockId: bId, width: newW, height: newH } = pendingResize;
-              setCodeBlocks(prev => prev.map(b => b.id === bId ? { ...b, width: newW, height: newH } : b));
+              const { blockId: bId, width: finalW, height: finalH } = pendingResize;
+              const next = codeBlocksRef.current.map(b => b.id === bId ? { ...b, width: finalW, height: finalH } : b);
+              codeBlocksRef.current = next;
+              setCodeBlocks(next);
               pendingResize = null;
             }
           });
@@ -2497,12 +2508,16 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       }
       if (pendingDrag) {
         const { blockId: bId, x: newX, y: newY } = pendingDrag;
-        setCodeBlocks(prev => prev.map(b => b.id === bId ? { ...b, x: newX, y: newY } : b));
+        const next = codeBlocksRef.current.map(b => b.id === bId ? { ...b, x: newX, y: newY } : b);
+        codeBlocksRef.current = next;
+        setCodeBlocks(next);
         pendingDrag = null;
       }
       if (pendingResize) {
         const { blockId: bId, width: newW, height: newH } = pendingResize;
-        setCodeBlocks(prev => prev.map(b => b.id === bId ? { ...b, width: newW, height: newH } : b));
+        const next = codeBlocksRef.current.map(b => b.id === bId ? { ...b, width: newW, height: newH } : b);
+        codeBlocksRef.current = next;
+        setCodeBlocks(next);
         pendingResize = null;
       }
       if (blockDragRef.current || blockResizeRef.current) {
