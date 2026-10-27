@@ -2316,26 +2316,30 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
   const drawGrid = (ctx: CanvasRenderingContext2D) => {
     const canvas = canvasRef.current; if (!canvas) return;
-    const gridSize = 20, majorGridStep = 5, cam = cameraRef.current, scale = scaleRef.current;
+    const gridSize = 14, majorGridStep = 5, cam = cameraRef.current, scale = scaleRef.current;
     const left = (0 - cam.x) / scale, top = (0 - cam.y) / scale, right = (canvas.width - cam.x) / scale, bottom = (canvas.height - cam.y) / scale;
     const startX = Math.floor(left / gridSize) * gridSize, startY = Math.floor(top / gridSize) * gridSize;
     ctx.save(); ctx.lineWidth = 1 / scale;
     for (let x = startX; x < right; x += gridSize) {
-        ctx.beginPath(); const isMajor = x % (gridSize * majorGridStep) === 0;
+        ctx.beginPath();
+        const gridIndex = Math.round(x / gridSize);
+        const isMajor = gridIndex % majorGridStep === 0;
         ctx.strokeStyle = isDarkMode 
             ? (isMajor ? '#3f3f46' : '#27272a') 
             : (isMajor ? '#cbd5e1' : '#f1f5f9');
-        if (x === 0) ctx.strokeStyle = isDarkMode ? '#71717a' : '#94a3b8';
-        ctx.lineWidth = (isMajor || x === 0) ? (2 / scale) : (1 / scale);
+        if (gridIndex === 0) ctx.strokeStyle = isDarkMode ? '#71717a' : '#94a3b8';
+        ctx.lineWidth = (isMajor || gridIndex === 0) ? (2 / scale) : (1 / scale);
         ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
     }
     for (let y = startY; y < bottom; y += gridSize) {
-        ctx.beginPath(); const isMajor = y % (gridSize * majorGridStep) === 0;
+        ctx.beginPath();
+        const gridIndex = Math.round(y / gridSize);
+        const isMajor = gridIndex % majorGridStep === 0;
         ctx.strokeStyle = isDarkMode 
             ? (isMajor ? '#3f3f46' : '#27272a') 
             : (isMajor ? '#cbd5e1' : '#f1f5f9');
-        if (y === 0) ctx.strokeStyle = isDarkMode ? '#71717a' : '#94a3b8';
-        ctx.lineWidth = (isMajor || y === 0) ? (2 / scale) : (1 / scale);
+        if (gridIndex === 0) ctx.strokeStyle = isDarkMode ? '#71717a' : '#94a3b8';
+        ctx.lineWidth = (isMajor || gridIndex === 0) ? (2 / scale) : (1 / scale);
         ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke();
     }
     ctx.restore();

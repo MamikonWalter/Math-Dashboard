@@ -16,23 +16,41 @@ import { saveLocalBoardState, loadLocalBoardState, clearLocalBoardState } from '
 
 const App: React.FC = () => {
   const [currentTool, setCurrentTool] = useState<ToolType>('pen');
-  const [color, setColor] = useState('#ffffff');
+
+  // UI Visibility & Theme - White (light) theme by default at launch
+  const [isUIVisible, setIsUIVisible] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    try {
+      const savedTheme = localStorage.getItem('mathters_theme');
+      if (savedTheme !== null) {
+        return savedTheme === 'dark';
+      }
+    } catch {}
+    return false; // White theme by default
+  });
+
+  const [color, setColor] = useState(() => {
+    try {
+      const savedTheme = localStorage.getItem('mathters_theme');
+      if (savedTheme === 'dark') return '#ffffff';
+    } catch {}
+    return '#000000';
+  });
   const [strokeWidth, setStrokeWidth] = useState(DEFAULT_STROKE_WIDTH);
   const [eraserWidth, setEraserWidth] = useState(DEFAULT_ERASER_WIDTH);
   const [shapeSize, setShapeSize] = useState(DEFAULT_SHAPE_SIZE);
   const [zoom, setZoom] = useState(1);
   const [isShapeSelected, setIsShapeSelected] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
-  
-  // UI Visibility & Theme
-  const [isUIVisible, setIsUIVisible] = useState(true);
-  const [isDarkMode, setIsDarkMode] = useState(true);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(true);
   const [is3DPanelOpen, setIs3DPanelOpen] = useState(false);
 
   const handleToggleDarkMode = useCallback(() => {
     setIsDarkMode(prev => {
       const next = !prev;
+      try {
+        localStorage.setItem('mathters_theme', next ? 'dark' : 'light');
+      } catch {}
       setColor(currentColor => {
         if (next && (currentColor.toLowerCase() === '#000000' || currentColor === '#111111')) {
           return '#ffffff';
