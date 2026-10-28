@@ -21,22 +21,24 @@
         background-color: #f0f2f5; /* Default white theme canvas background */
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       }
-      /* Custom cursor for different tools */
+      /* Custom cursors for different tools (compact 14px size, 50% smaller) */
       .cursor-pen {
-        /* A small black dot with a white outline for visibility on dark backgrounds, always black inside */
-        cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12"><circle cx="6" cy="6" r="3" fill="black" stroke="white" stroke-width="1"/></svg>') 6 6, crosshair;
+        cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 28 28' fill='none'%3E%3Cpath d='M2 2L8.5 3.5L12 7L23 18C24.5 19.5 24.5 22 23 23.5C21.5 25 19 25 17.5 23.5L6.5 12.5L3 9L2 2Z' fill='white' stroke='%230f172a' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M12 7L22 17C23 18 23 19.5 22 20.5C21 21.5 19.5 21.5 18.5 20.5L8.5 10.5' fill='%231e293b'/%3E%3Cpath d='M8.5 10.5L12 7L8 3L4.5 6.5L8.5 10.5Z' fill='%233b82f6'/%3E%3Cpath d='M2 2L8 3L3 8L2 2Z' fill='%23e2e8f0'/%3E%3Cpath d='M2 2L6 6' stroke='%230f172a' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") 1 1, crosshair;
       }
       .cursor-eraser {
-        cursor: none;
+        cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 28 28' fill='none'%3E%3Cpath d='M5 21L14 24L24 14L15 5L7 13L5 21Z' fill='white' stroke='%230f172a' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M5 21L14 24L17 21L8 12L5 21Z' fill='%23f43f5e'/%3E%3Cpath d='M8 12L17 21L24 14L15 5L8 12Z' fill='%230284c7'/%3E%3Cpath d='M11 9L20 18' stroke='%2338bdf8' stroke-width='2'/%3E%3Ccircle cx='5' cy='21' r='1.5' fill='%230f172a'/%3E%3C/svg%3E") 3 11, cell;
+      }
+      .cursor-text {
+        cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 28 28' fill='none'%3E%3Cpath d='M6 3H12M9 3V19M6 19H12' stroke='white' stroke-width='4.5' stroke-linecap='round'/%3E%3Cpath d='M6 3H12M9 3V19M6 19H12' stroke='%230f172a' stroke-width='2' stroke-linecap='round'/%3E%3Crect x='14' y='6' width='12' height='12' rx='3' fill='%232563eb' stroke='white' stroke-width='1.5'/%3E%3Ctext x='20' y='15.5' font-family='-apple-system, BlinkMacSystemFont, sans-serif' font-size='9' font-weight='bold' fill='white' text-anchor='middle'%3ET%3C/text%3E%3C/svg%3E") 5 6, text;
       }
       .cursor-code {
-        cursor: crosshair;
+        cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 28 28' fill='none'%3E%3Cpath d='M12 2V7M12 17V22M2 12H7M17 12H22' stroke='white' stroke-width='3.5' stroke-linecap='round'/%3E%3Cpath d='M12 2V7M12 17V22M2 12H7M17 12H22' stroke='%230f172a' stroke-width='1.5' stroke-linecap='round'/%3E%3Crect x='13' y='13' width='13' height='11' rx='2.5' fill='%238b5cf6' stroke='white' stroke-width='1.2'/%3E%3Ctext x='19.5' y='21' font-family='monospace' font-size='7.5' font-weight='bold' fill='white' text-anchor='middle'%3E%26lt%3B%26gt%3B%3C/text%3E%3C/svg%3E") 6 6, crosshair;
       }
       .cursor-default {
         cursor: default;
       }
       .cursor-crosshair {
-        cursor: crosshair;
+        cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 25 25' fill='none'%3E%3Ccircle cx='12.5' cy='12.5' r='5' stroke='white' stroke-width='3'/%3E%3Ccircle cx='12.5' cy='12.5' r='5' stroke='%230f172a' stroke-width='1.5'/%3E%3Cpath d='M12.5 1V7M12.5 18V24M1 12.5H7M18 12.5H24' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M12.5 1V7M12.5 18V24M1 12.5H7M18 12.5H24' stroke='%230f172a' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='12.5' cy='12.5' r='1.5' fill='%232563eb'/%3E%3C/svg%3E") 6 6, crosshair;
       }
       .ui-smooth-transition {
         transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;

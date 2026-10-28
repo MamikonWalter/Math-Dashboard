@@ -1568,6 +1568,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     render();
   }, [isDarkMode, render]);
 
+  // Reset any lingering inline cursor when switching tools
+  useEffect(() => {
+    if (canvasRef.current) {
+      canvasRef.current.style.cursor = '';
+    }
+    hoveredBorderRef.current = null;
+  }, [tool]);
+
   // --- Handlers ---
   const handleFinishText = useCallback(() => {
       const currentInput = activeTextInputRef.current;
@@ -2171,7 +2179,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         const prevHovered = hoveredBorderRef.current;
         hoveredBorderRef.current = hoveredTarget;
         if (canvasRef.current) {
-            canvasRef.current.style.cursor = hoveredTarget ? hoveredTarget.cursor : 'default';
+            canvasRef.current.style.cursor = hoveredTarget ? hoveredTarget.cursor : '';
         }
         if ((prevHovered?.strokeIndex !== hoveredTarget?.strokeIndex) || (prevHovered?.handle !== hoveredTarget?.handle)) {
             requestRender();
@@ -2661,9 +2669,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
   const getCursorStyle = () => {
     if (tool === 'code') return 'cursor-code';
-    if (shapeTools.includes(tool) || tool === 'dotted-line' || tool === 'text') return 'cursor-crosshair';
-    if (tool === 'pen') return 'cursor-pen';
+    if (tool === 'pen' || tool === 'dotted-line') return 'cursor-pen';
     if (tool === 'eraser') return 'cursor-eraser';
+    if (tool === 'text') return 'cursor-text';
+    if (shapeTools.includes(tool)) return 'cursor-crosshair';
     return 'cursor-default';
   };
 
@@ -2743,7 +2752,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           eraserCurrentPosRef.current = null; 
           endDrawing(); 
         }} 
-        className="block touch-none" 
+        className={`block touch-none ${getCursorStyle()}`} 
       />
       
       {/* Code Blocks Overlays */}
