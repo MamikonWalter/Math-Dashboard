@@ -174,6 +174,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     startMouseY: number;
     startWidth: number;
     startHeight: number;
+    startManualWidth: number;
+    startManualHeight: number;
+    startUserScale: number;
   } | null>(null);
 
   const isRotatingRef = useRef<{
@@ -726,20 +729,21 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     const lineCount = Math.max(1, lines.length);
     const maxVisualLen = lines.reduce((max, l) => Math.max(max, l.replace(/\t/g, '    ').length), 0);
 
-    const baseWidth = Math.max(380, block.width || 380);
-    const codeFontSize = 13;
-    const lineH = 20;
-    const gutterW = lineCount >= 100 ? 42 : 36;
-    const headerH = 28;
-    const footerH = 24;
+    const userScale = Math.max(0.65, Math.min(3.0, block.userScale ?? 1.0));
+    const codeFontSize = Math.round(13 * userScale * 10) / 10;
+    const lineH = Math.round(20 * userScale * 10) / 10;
+    const gutterW = Math.round((lineCount >= 100 ? 46 : 38) * userScale);
+    const headerH = Math.round(28 * Math.min(1.4, Math.max(0.8, userScale)));
+    const footerH = Math.round(24 * Math.min(1.4, Math.max(0.8, userScale)));
 
-    const charW = 8.05;
+    const charW = codeFontSize * 0.605;
     const textW = Math.ceil(maxVisualLen * charW);
-    const neededW = (gutterW + 12) + textW + 28;
-    const w = Math.max(baseWidth, neededW);
+    const neededW = gutterW + Math.round(12 * userScale) + textW + Math.round(20 * userScale);
+    const baseW = block.manualWidth || block.width || Math.round(420 * userScale);
+    const w = Math.max(baseW, neededW);
 
-    const editorContentH = lineCount * lineH + 16;
-    const h = block.isMinimized ? headerH : (headerH + editorContentH + footerH);
+    const editorContentH = lineCount * lineH + Math.round(16 * userScale);
+    const h = block.isMinimized ? headerH : Math.max(block.height || (headerH + editorContentH + footerH), headerH + editorContentH + footerH);
 
     ctx.save();
     // Card background (borderless)
@@ -1051,11 +1055,18 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         codeBlocksRef.current.forEach(block => {
             const lines = (block.code || '').split('\n');
             const lineCount = Math.max(1, lines.length);
+            const userScale = Math.max(0.65, Math.min(3.0, block.userScale ?? 1.0));
+            const codeFontSize = Math.round(13 * userScale * 10) / 10;
+            const lineH = Math.round(20 * userScale * 10) / 10;
+            const gutterW = Math.round((lineCount >= 100 ? 46 : 38) * userScale);
+            const headerH = Math.round(28 * Math.min(1.4, Math.max(0.8, userScale)));
+            const footerH = Math.round(24 * Math.min(1.4, Math.max(0.8, userScale)));
             const maxVisualLen = lines.reduce((max, l) => Math.max(max, l.replace(/\t/g, '    ').length), 0);
-            const neededW = 48 + Math.ceil(maxVisualLen * 8.05) + 28;
-            const w = Math.max(block.width || 380, neededW);
-            const neededH = 28 + (lineCount * 20 + 16) + 24;
-            const h = block.isMinimized ? 28 : (block.height || neededH);
+            const charW = codeFontSize * 0.605;
+            const neededW = gutterW + Math.round(12 * userScale) + Math.ceil(maxVisualLen * charW) + Math.round(20 * userScale);
+            const w = Math.max(block.manualWidth || block.width || Math.round(420 * userScale), neededW);
+            const neededH = headerH + (lineCount * lineH + Math.round(16 * userScale)) + footerH;
+            const h = block.isMinimized ? headerH : Math.max(block.height || neededH, neededH);
             minX = Math.min(minX, block.x);
             maxX = Math.max(maxX, block.x + w);
             minY = Math.min(minY, block.y);
@@ -1597,11 +1608,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             x: Math.round(worldPos.x),
             y: Math.round(worldPos.y),
             width: 420,
-            height: 180,
+            height: 200,
+            manualWidth: 420,
+            manualHeight: 200,
             title: '',
             code: '',
             output: undefined,
-            isMinimized: false
+            isMinimized: false,
+            userScale: 1.0
         };
         const next = [...codeBlocksRef.current.filter(b => b.id !== newBlock.id), newBlock];
         codeBlocksRef.current = next;
@@ -2450,7 +2464,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   useEffect(() => {
     let animFrameId: number | null = null;
     let pendingDrag: { blockId: string; x: number; y: number } | null = null;
-    let pendingResize: { blockId: string; width: number; height: number } | null = null;
+    let pendingResize: { 
+      blockId: string; 
+      width: number; 
+      height: number; 
+      manualWidth: number; 
+      manualHeight: number; 
+      userScale: number; 
+    } | null = null;
 
     const handlePointerMove = (e: PointerEvent | MouseEvent) => {
       if (blockDragRef.current) {
@@ -2482,20 +2503,32 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
           });
         }
       } else if (blockResizeRef.current) {
-        const { blockId, startMouseX, startMouseY, startWidth, startHeight } = blockResizeRef.current;
+        const { blockId, startMouseX, startMouseY, startManualWidth, startManualHeight, startUserScale } = blockResizeRef.current;
         const currentScale = scaleRef.current || 1;
         const dw = (e.clientX - startMouseX) / currentScale;
         const dh = (e.clientY - startMouseY) / currentScale;
-        const newW = Math.max(260, Math.round(startWidth + dw));
-        const newH = Math.max(140, Math.round(startHeight + dh));
 
-        pendingResize = { blockId, width: newW, height: newH };
+        // Proportional character/font scaling: directly tied to manual bottom-right corner resize drag
+        const scaleMultiplier = Math.max(0.2, (startManualWidth + dw) / startManualWidth);
+        const newUserScale = Math.max(0.65, Math.min(3.0, Math.round(startUserScale * scaleMultiplier * 100) / 100));
+
+        const newManualW = Math.max(Math.round(260 * newUserScale), Math.round(startManualWidth + dw));
+        const newManualH = Math.max(Math.round(140 * newUserScale), Math.round(startManualHeight + dh));
+
+        pendingResize = { 
+          blockId, 
+          width: newManualW, 
+          height: newManualH, 
+          manualWidth: newManualW, 
+          manualHeight: newManualH, 
+          userScale: newUserScale 
+        };
         if (animFrameId === null) {
           animFrameId = requestAnimationFrame(() => {
             animFrameId = null;
             if (pendingResize) {
-              const { blockId: bId, width: finalW, height: finalH } = pendingResize;
-              const next = codeBlocksRef.current.map(b => b.id === bId ? { ...b, width: finalW, height: finalH } : b);
+              const { blockId: bId, width: finalW, height: finalH, manualWidth: mw, manualHeight: mh, userScale: us } = pendingResize;
+              const next = codeBlocksRef.current.map(b => b.id === bId ? { ...b, width: finalW, height: finalH, manualWidth: mw, manualHeight: mh, userScale: us } : b);
               codeBlocksRef.current = next;
               setCodeBlocks(next);
               pendingResize = null;
@@ -2518,8 +2551,8 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         pendingDrag = null;
       }
       if (pendingResize) {
-        const { blockId: bId, width: newW, height: newH } = pendingResize;
-        const next = codeBlocksRef.current.map(b => b.id === bId ? { ...b, width: newW, height: newH } : b);
+        const { blockId: bId, width: newW, height: newH, manualWidth: mw, manualHeight: mh, userScale: us } = pendingResize;
+        const next = codeBlocksRef.current.map(b => b.id === bId ? { ...b, width: newW, height: newH, manualWidth: mw, manualHeight: mh, userScale: us } : b);
         codeBlocksRef.current = next;
         setCodeBlocks(next);
         pendingResize = null;
@@ -2742,12 +2775,18 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
               if ('button' in e && e.button !== 0) return;
               e.stopPropagation();
               const coords = 'touches' in e ? e.touches[0] : e;
+              const currentScale = block.userScale ?? 1.0;
+              const startManualWidth = block.manualWidth || (block.userScale ? Math.round(420 * currentScale) : Math.min(block.width || 420, 600));
+              const startManualHeight = block.manualHeight || (block.userScale ? Math.round(200 * currentScale) : (block.height || 200));
               blockResizeRef.current = {
                 blockId: block.id,
                 startMouseX: coords.clientX,
                 startMouseY: coords.clientY,
-                startWidth: block.width,
-                startHeight: block.height || 240
+                startWidth: block.width || startManualWidth,
+                startHeight: block.height || startManualHeight,
+                startManualWidth,
+                startManualHeight,
+                startUserScale: currentScale
               };
               setActiveCodeBlockId(block.id);
             }}

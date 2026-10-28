@@ -470,10 +470,8 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
   const lineCount = Math.max(1, lines.length);
   const isMinimized = block.isMinimized ?? false;
 
-  // Proportional font scaling based on block width (base reference: 420px)
-  const baseRefWidth = 420;
-  const userWidth = Math.max(260, block.width || baseRefWidth);
-  const scaleRatio = Math.max(0.65, Math.min(3.0, userWidth / baseRefWidth));
+  // Character and font scale is governed EXCLUSIVELY by userScale (adjusted only by dragging the bottom-right resize handle)
+  const scaleRatio = Math.max(0.65, Math.min(3.0, block.userScale ?? 1.0));
 
   const codeFontSize = Math.round(13 * scaleRatio * 10) / 10;
   const codeLineHeight = Math.round(20 * scaleRatio * 10) / 10;
@@ -494,20 +492,27 @@ export const PythonCodeBlock: React.FC<PythonCodeBlockProps> = ({
   }, 0);
   const textContentWidth = Math.ceil(maxVisualLength * charWidth);
   const neededWidth = gutterWidth + editorPaddingLeft + textContentWidth + editorPaddingRight;
-  const effectiveWidth = Math.max(userWidth, neededWidth);
+
+  // Manual base width: regulated solely by user corner drag (or default 420px at current scale)
+  const baseManualWidth = block.manualWidth || (block.userScale ? Math.round(420 * scaleRatio) : Math.min(block.width || 420, 600));
+  // The window automatically expands to the right to fit long code lines without clipping
+  const effectiveWidth = Math.max(baseManualWidth, neededWidth);
 
   const editorContentHeight = lineCount * codeLineHeight + editorPaddingTop + editorPaddingBottom;
   const minBlockHeight = headerHeight + editorContentHeight + footerHeight;
-  const effectiveHeight = isMinimized ? headerHeight : Math.max(minBlockHeight, block.height || minBlockHeight);
+  const baseManualHeight = block.manualHeight || (block.userScale ? Math.round(200 * scaleRatio) : minBlockHeight);
+  // The window automatically expands downward to fit all lines
+  const effectiveHeight = isMinimized ? headerHeight : Math.max(minBlockHeight, baseManualHeight);
 
   // Adjust window height to fit code content perfectly (green dot action)
   const handleAutoFitContent = () => {
     const linesCount = block.code.split('\n').length;
     const calculatedHeight = linesCount * codeLineHeight + editorPaddingTop + editorPaddingBottom + headerHeight + footerHeight;
-    onUpdate({ height: calculatedHeight, isMinimized: false });
+    onUpdate({ height: calculatedHeight, manualHeight: calculatedHeight, isMinimized: false });
   };
 
   // Synchronize effective dimensions with parent for canvas export & hit-testing
+  // Notice: updating width/height does NOT touch userScale or manualWidth!
   useEffect(() => {
     if (Math.abs((block.width || 0) - effectiveWidth) > 2 || Math.abs((block.height || 0) - effectiveHeight) > 2) {
       onUpdate({ width: effectiveWidth, height: effectiveHeight });

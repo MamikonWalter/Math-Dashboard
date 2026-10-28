@@ -31,10 +31,13 @@ export interface CodeBlockItem {
   y: number;
   width: number;
   height: number;
+  manualWidth?: number;
+  manualHeight?: number;
   title: string;
   code: string;
   output?: string;
   isMinimized?: boolean;
+  userScale?: number;
 }
 
 export interface Stroke {
