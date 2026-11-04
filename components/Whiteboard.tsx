@@ -1787,10 +1787,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
         if (foundIndex !== -1) {
             const isShift = (e as React.MouseEvent).shiftKey;
+            const stroke = strokesRef.current[foundIndex];
             if (isShift) {
                 if (selectedIndicesRef.current.has(foundIndex)) {
                     selectedIndicesRef.current.delete(foundIndex);
-                } else {
+                } else if (!stroke?.isLocked) {
                     selectedIndicesRef.current.add(foundIndex);
                 }
             } else {
@@ -1798,7 +1799,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                 selectedIndicesRef.current.add(foundIndex);
             }
 
-            const stroke = strokesRef.current[foundIndex];
             setSelectedImageIndex(stroke?.tool === 'image' ? foundIndex : null);
 
             if (selectedIndicesRef.current.size === 1 && onShapeSelect) {
@@ -2242,7 +2242,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         const curr = selectionCurrentRef.current;
         const selBox = { minX: Math.min(start.x, curr.x), minY: Math.min(start.y, curr.y), maxX: Math.max(start.x, curr.x), maxY: Math.max(start.y, curr.y) };
         selectedIndicesRef.current.clear();
-        strokesRef.current.forEach((stroke, index) => { if (checkIntersection(selBox, getBoundingBox(stroke))) selectedIndicesRef.current.add(index); });
+        strokesRef.current.forEach((stroke, index) => { 
+            if (!stroke.isLocked && checkIntersection(selBox, getBoundingBox(stroke))) {
+                selectedIndicesRef.current.add(index); 
+            }
+        });
         if (selectedIndicesRef.current.size === 1) {
             const [onlyIdx] = Array.from(selectedIndicesRef.current) as number[];
             const s = strokesRef.current[onlyIdx];

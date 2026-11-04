@@ -42,22 +42,22 @@ const Toolbar: React.FC<ToolbarProps> = ({
 }) => {
   
   const mainTools = [
-    { id: 'cursor', icon: MousePointer2, label: 'Select (V)' },
-    { id: 'pen', icon: Pen, label: 'Pen (P)' },
-    { id: 'text', icon: Type, label: 'Text (T)' },
-    { id: 'code', icon: Code2, label: 'Code block (Python)' },
-    { id: 'dotted-line', icon: Minus, label: 'Dotted Line (I)' },
-    { id: 'eraser', icon: Eraser, label: 'Eraser (E)' },
+    { id: 'cursor', icon: MousePointer2, label: 'Выделение (V)' },
+    { id: 'pen', icon: Pen, label: 'Перо (P)' },
+    { id: 'text', icon: Type, label: 'Текст (T)' },
+    { id: 'code', icon: Code2, label: 'Код Python (C)' },
+    { id: 'dotted-line', icon: Minus, label: 'Пунктирная линия (L)' },
+    { id: 'eraser', icon: Eraser, label: 'Ластик (E)' },
   ];
 
   const shapeTools = [
-    { id: 'square', icon: Square, label: 'Square (S)' },
-    { id: 'circle', icon: Circle, label: 'Circle' },
-    { id: 'diamond', icon: Diamond, label: 'Diamond' },
-    { id: 'triangle', icon: Triangle, label: 'Triangle' },
-    { id: 'star', icon: Star, label: 'Star' },
-    { id: 'speech', icon: MessageSquare, label: 'Speech Bubble' },
-    { id: 'arrow', icon: ArrowRight, label: 'Arrow' },
+    { id: 'square', icon: Square, label: 'Квадрат (S)' },
+    { id: 'circle', icon: Circle, label: 'Круг' },
+    { id: 'diamond', icon: Diamond, label: 'Ромб' },
+    { id: 'triangle', icon: Triangle, label: 'Треугольник' },
+    { id: 'star', icon: Star, label: 'Звезда' },
+    { id: 'speech', icon: MessageSquare, label: 'Выноска' },
+    { id: 'arrow', icon: ArrowRight, label: 'Стрелка' },
   ];
 
   const is3DActive = ['cube', 'cylinder', 'sphere', 'pyramid', 'prism'].includes(currentTool);
@@ -102,7 +102,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
             ${is3DActive || is3DPanelOpen 
               ? (isDarkMode ? 'bg-blue-600/25 text-blue-400' : 'bg-blue-50 text-blue-600') 
               : (isDarkMode ? 'text-gray-300 hover:bg-[#2c2c31] hover:text-white' : 'text-gray-700 hover:bg-gray-100')}`}
-          title="3D Objects"
+          title="3D объекты"
         >
           <Box className="w-3.5 h-3.5" strokeWidth={2} />
           {(is3DActive || is3DPanelOpen) && <div className={`absolute left-0 top-1/2 -translate-y-1/2 -ml-0.5 w-0.5 h-4 rounded-r-full ${isDarkMode ? 'bg-blue-400' : 'bg-blue-600'}`} />}

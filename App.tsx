@@ -350,37 +350,53 @@ const App: React.FC = () => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const isCtrlOrCmd = e.metaKey || e.ctrlKey;
       const code = e.code;
+      const key = (e.key || '').toLowerCase();
+
       if (code === 'Delete' || code === 'Backspace') {
           e.preventDefault(); whiteboardRef.current?.deleteSelection(); return;
       }
       if (isCtrlOrCmd) {
-          switch (code) {
-              case 'KeyZ': e.preventDefault(); if (e.shiftKey) handleRedo(); else handleUndo(); break;
-              case 'KeyY': e.preventDefault(); handleRedo(); break;
-              case 'KeyC': {
-                  const copied = whiteboardRef.current?.copySelection();
-                  if (copied) {
-                      lastCopySourceRef.current = 'board';
-                      isBoardCopyingRef.current = true;
-                      setTimeout(() => { isBoardCopyingRef.current = false; }, 200);
-                  }
-                  break;
+          if (code === 'KeyZ' || key === 'z' || key === 'я') {
+              e.preventDefault();
+              if (e.shiftKey) handleRedo(); else handleUndo();
+          } else if (code === 'KeyY' || key === 'y' || key === 'н') {
+              e.preventDefault();
+              handleRedo();
+          } else if (code === 'KeyC' || key === 'c' || key === 'с') {
+              const copied = whiteboardRef.current?.copySelection();
+              if (copied) {
+                  lastCopySourceRef.current = 'board';
+                  isBoardCopyingRef.current = true;
+                  setTimeout(() => { isBoardCopyingRef.current = false; }, 200);
               }
           }
       } else {
-          switch (code) {
-              case 'KeyV': handleSetTool('cursor'); break;
-              case 'KeyT': handleSetTool('text'); break;
-              case 'KeyC': handleSetTool('code'); break;
-              case 'KeyP': handleSetTool('pen'); break;
-              case 'KeyM': handleAISolve(); break;
-              case 'KeyI': handleSetTool('dotted-line'); break;
-              case 'KeyS': handleSetTool('square'); break;
-              case 'KeyE': handleSetTool('eraser'); break;
-              case 'KeyG': setShowGrid(prev => !prev); break;
-              case 'KeyD': handleToggleDarkMode(); break;
-              case 'Equal': e.preventDefault(); handleZoomIn(); break;
-              case 'Minus': e.preventDefault(); handleZoomOut(); break;
+          if (code === 'KeyV' || key === 'v' || key === 'м') {
+              handleSetTool('cursor');
+          } else if (code === 'KeyT' || key === 't' || key === 'е') {
+              handleSetTool('text');
+          } else if (code === 'KeyC' || key === 'c' || key === 'с') {
+              handleSetTool('code');
+          } else if (code === 'KeyP' || key === 'p' || key === 'з') {
+              handleSetTool('pen');
+          } else if (code === 'KeyM' || key === 'm' || key === 'ь') {
+              handleAISolve();
+          } else if (code === 'KeyL' || key === 'l' || key === 'д' || code === 'KeyI' || key === 'i' || key === 'ш') {
+              handleSetTool('dotted-line');
+          } else if (code === 'KeyS' || key === 's' || key === 'ы') {
+              handleSetTool('square');
+          } else if (code === 'KeyE' || key === 'e' || key === 'у') {
+              handleSetTool('eraser');
+          } else if (code === 'KeyG' || key === 'g' || key === 'п') {
+              setShowGrid(prev => !prev);
+          } else if (code === 'KeyD' || key === 'd' || key === 'в') {
+              handleToggleDarkMode();
+          } else if (code === 'Equal' || key === '=' || key === '+') {
+              e.preventDefault();
+              handleZoomIn();
+          } else if (code === 'Minus' || key === '-' || key === '_') {
+              e.preventDefault();
+              handleZoomOut();
           }
       }
     };
