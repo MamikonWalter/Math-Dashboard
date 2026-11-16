@@ -137,11 +137,11 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   
   // Selection & Dragging Refs
   const selectedIndicesRef = useRef<Set<number>>(new Set());
-  const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const isDraggingSelectionRef = useRef(false);
   
   // Marquee Selection Refs
   const isSelectingRef = useRef(false);
+  const isAdditiveSelectionRef = useRef(false);
   const selectionStartRef = useRef<Point | null>(null);
   const selectionCurrentRef = useRef<Point | null>(null);
 
@@ -926,7 +926,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       codeBlocksRef.current = [];
       setCodeBlocks([]);
       selectedIndicesRef.current.clear();
-      setSelectedImageIndex(null);
       historyRef.current = [{ strokes: [], codeBlocks: [] }];
       historyStepRef.current = 0;
       onHistoryChange(false, false);
@@ -983,12 +982,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                 }
             });
             selectedIndicesRef.current = remainingSelected;
-            if (remainingSelected.size === 1) {
-                const [remIdx] = Array.from(remainingSelected);
-                setSelectedImageIndex(strokesRef.current[remIdx]?.tool === 'image' ? remIdx : null);
-            } else {
-                setSelectedImageIndex(null);
-            }
             if (onShapeSelect) onShapeSelect(null);
             isDraggingSelectionRef.current = false;
             isDrawingRef.current = false;
@@ -1035,11 +1028,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         strokesRef.current = [...strokesRef.current, ...newStrokes];
         selectedIndicesRef.current.clear();
         for (let i = 0; i < newStrokes.length; i++) selectedIndicesRef.current.add(startIndex + i);
-        if (newStrokes.length === 1 && newStrokes[0].tool === 'image') {
-            setSelectedImageIndex(startIndex);
-        } else {
-            setSelectedImageIndex(null);
-        }
         if (onShapeSelect) onShapeSelect(null);
         pushHistory();
         render();
@@ -1132,7 +1120,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             strokesRef.current = [...strokesRef.current, newStroke];
             selectedIndicesRef.current.clear();
             selectedIndicesRef.current.add(newIndex);
-            setSelectedImageIndex(newIndex);
             if (onSelectTool) onSelectTool('cursor');
             pushHistory();
             render();
@@ -1276,9 +1263,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     if (showGrid) drawGrid(ctx);
     strokesRef.current.forEach(stroke => drawStrokeOnCtx(ctx, stroke));
 
-    // Draw subtle lock badge on unselected locked images so user clearly sees they are pinned
+    // Draw subtle lock badge on unselected locked images and shapes so user clearly sees they are pinned
     strokesRef.current.forEach((stroke, i) => {
-        if (stroke.tool === 'image' && stroke.isLocked && !selectedIndicesRef.current.has(i)) {
+        if ((stroke.tool === 'image' || shapeTools.includes(stroke.tool)) && stroke.isLocked && !selectedIndicesRef.current.has(i)) {
             const { w, h } = getStrokeBounds(stroke);
             const rot = stroke.rotation || 0;
             const center = stroke.points[0];
@@ -1695,9 +1682,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     if (tool === 'cursor') {
         const selBox = getSelectionBounds();
         const scale = scaleRef.current || 1;
+        const isShift = 'shiftKey' in e && !!(e as React.MouseEvent).shiftKey;
 
-        // 1. If there is an active selection, test its handles and body FIRST
-        if (selectedIndicesRef.current.size > 0 && selBox) {
+        // 1. If there is an active selection (and user is not holding Shift to add/toggle items), test its handles and body FIRST
+        if (selectedIndicesRef.current.size > 0 && selBox && !isShift) {
             const allLocked = Array.from(selectedIndicesRef.current).every(i => strokesRef.current[i]?.isLocked);
 
             if (!allLocked) {
@@ -1786,7 +1774,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             }
         }
 
-        // 2. User clicked outside active selection: check if clicking directly on another stroke
+        // 2. User clicked outside active selection (or Shift-clicked): check if clicking directly on a stroke
         let foundIndex = -1;
         for (let i = strokesRef.current.length - 1; i >= 0; i--) {
             if (hitTest(worldPos, strokesRef.current[i])) {
@@ -1796,7 +1784,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         }
 
         if (foundIndex !== -1) {
-            const isShift = (e as React.MouseEvent).shiftKey;
             const stroke = strokesRef.current[foundIndex];
             if (isShift) {
                 if (selectedIndicesRef.current.has(foundIndex)) {
@@ -1809,15 +1796,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                 selectedIndicesRef.current.add(foundIndex);
             }
 
-            setSelectedImageIndex(stroke?.tool === 'image' ? foundIndex : null);
-
             if (selectedIndicesRef.current.size === 1 && onShapeSelect) {
-                 if (shapeTools.includes(stroke.tool) || stroke.tool === 'image' || stroke.tool === 'text') {
-                    onShapeSelect(Math.round(stroke.width / PIXELS_PER_PERCENT));
+                 const [onlyIdx] = Array.from(selectedIndicesRef.current) as number[];
+                 const singleStroke = strokesRef.current[onlyIdx];
+                 if (singleStroke && !singleStroke.isLocked && (shapeTools.includes(singleStroke.tool) || singleStroke.tool === 'image' || singleStroke.tool === 'text')) {
+                    onShapeSelect(Math.round(singleStroke.width / PIXELS_PER_PERCENT));
                  } else onShapeSelect(null);
             } else if (onShapeSelect) onShapeSelect(null);
 
-            if (stroke && stroke.isLocked) {
+            if (isShift || (stroke && stroke.isLocked)) {
                 isDraggingSelectionRef.current = false;
                 isDrawingRef.current = false;
             } else {
@@ -1834,10 +1821,12 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             render();
             setCamTick(t => t + 1);
         } else {
-            // Clicked empty canvas: deselect and start marquee selection
-            selectedIndicesRef.current.clear();
-            setSelectedImageIndex(null);
-            if (onShapeSelect) onShapeSelect(null);
+            // Clicked empty canvas: deselect (unless Shift is held) and start marquee selection
+            if (!isShift) {
+                selectedIndicesRef.current.clear();
+                if (onShapeSelect) onShapeSelect(null);
+            }
+            isAdditiveSelectionRef.current = isShift;
             isSelectingRef.current = true;
             selectionStartRef.current = worldPos;
             selectionCurrentRef.current = worldPos;
@@ -2145,30 +2134,36 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         if (selectedIndicesRef.current.size > 0) {
             const selBox = getSelectionBounds();
             if (selBox) {
-                const rotX = selBox.minX - 12 / scale;
-                const rotY = selBox.maxY + 22 / scale;
-                if (Math.hypot(worldPos.x - rotX, worldPos.y - rotY) <= 15 / scale) {
-                    hoveredTarget = { strokeIndex: -1, handle: 'group-rot', cursor: 'grab' };
-                } else {
-                    const cornerRadius = 11 / scale;
-                    if (Math.hypot(worldPos.x - selBox.minX, worldPos.y - selBox.minY) <= cornerRadius) {
-                        hoveredTarget = { strokeIndex: -1, handle: 'group-nw', cursor: 'nwse-resize' };
-                    } else if (Math.hypot(worldPos.x - selBox.maxX, worldPos.y - selBox.minY) <= cornerRadius) {
-                        hoveredTarget = { strokeIndex: -1, handle: 'group-ne', cursor: 'nesw-resize' };
-                    } else if (Math.hypot(worldPos.x - selBox.maxX, worldPos.y - selBox.maxY) <= cornerRadius) {
-                        hoveredTarget = { strokeIndex: -1, handle: 'group-se', cursor: 'nwse-resize' };
-                    } else if (Math.hypot(worldPos.x - selBox.minX, worldPos.y - selBox.maxY) <= cornerRadius) {
-                        hoveredTarget = { strokeIndex: -1, handle: 'group-sw', cursor: 'nesw-resize' };
+                const allLocked = Array.from(selectedIndicesRef.current).every(i => strokesRef.current[i]?.isLocked);
+                if (!allLocked) {
+                    const rotX = selBox.minX - 12 / scale;
+                    const rotY = selBox.maxY + 22 / scale;
+                    if (Math.hypot(worldPos.x - rotX, worldPos.y - rotY) <= 15 / scale) {
+                        hoveredTarget = { strokeIndex: -1, handle: 'group-rot', cursor: 'grab' };
                     } else {
-                        const gripX = selBox.maxX + 14 / scale;
-                        const gripY = selBox.minY - 2 / scale;
-                        if (Math.hypot(worldPos.x - gripX, worldPos.y - gripY) <= 13 / scale) {
-                            hoveredTarget = { strokeIndex: -1, handle: 'group-grip', cursor: 'grab' };
-                        } else if (worldPos.x >= selBox.minX && worldPos.x <= selBox.maxX &&
-                                   worldPos.y >= selBox.minY && worldPos.y <= selBox.maxY) {
-                            hoveredTarget = { strokeIndex: -1, handle: 'group-body', cursor: 'move' };
+                        const cornerRadius = 11 / scale;
+                        if (Math.hypot(worldPos.x - selBox.minX, worldPos.y - selBox.minY) <= cornerRadius) {
+                            hoveredTarget = { strokeIndex: -1, handle: 'group-nw', cursor: 'nwse-resize' };
+                        } else if (Math.hypot(worldPos.x - selBox.maxX, worldPos.y - selBox.minY) <= cornerRadius) {
+                            hoveredTarget = { strokeIndex: -1, handle: 'group-ne', cursor: 'nesw-resize' };
+                        } else if (Math.hypot(worldPos.x - selBox.maxX, worldPos.y - selBox.maxY) <= cornerRadius) {
+                            hoveredTarget = { strokeIndex: -1, handle: 'group-se', cursor: 'nwse-resize' };
+                        } else if (Math.hypot(worldPos.x - selBox.minX, worldPos.y - selBox.maxY) <= cornerRadius) {
+                            hoveredTarget = { strokeIndex: -1, handle: 'group-sw', cursor: 'nesw-resize' };
+                        } else {
+                            const gripX = selBox.maxX + 14 / scale;
+                            const gripY = selBox.minY - 2 / scale;
+                            if (Math.hypot(worldPos.x - gripX, worldPos.y - gripY) <= 13 / scale) {
+                                hoveredTarget = { strokeIndex: -1, handle: 'group-grip', cursor: 'grab' };
+                            } else if (worldPos.x >= selBox.minX && worldPos.x <= selBox.maxX &&
+                                       worldPos.y >= selBox.minY && worldPos.y <= selBox.maxY) {
+                                hoveredTarget = { strokeIndex: -1, handle: 'group-body', cursor: 'move' };
+                            }
                         }
                     }
+                } else if (worldPos.x >= selBox.minX && worldPos.x <= selBox.maxX &&
+                           worldPos.y >= selBox.minY && worldPos.y <= selBox.maxY) {
+                    hoveredTarget = { strokeIndex: -1, handle: 'group-body', cursor: 'default' };
                 }
             }
         }
@@ -2256,21 +2251,31 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     }
     if (isSelectingRef.current && selectionStartRef.current && selectionCurrentRef.current) {
         isSelectingRef.current = false;
+        const keepExisting = isAdditiveSelectionRef.current;
+        isAdditiveSelectionRef.current = false;
         const start = selectionStartRef.current;
         const curr = selectionCurrentRef.current;
         const selBox = { minX: Math.min(start.x, curr.x), minY: Math.min(start.y, curr.y), maxX: Math.max(start.x, curr.x), maxY: Math.max(start.y, curr.y) };
-        selectedIndicesRef.current.clear();
+        if (!keepExisting) {
+            selectedIndicesRef.current.clear();
+        }
         strokesRef.current.forEach((stroke, index) => { 
             if (!stroke.isLocked && checkIntersection(selBox, getBoundingBox(stroke))) {
                 selectedIndicesRef.current.add(index); 
             }
         });
-        if (selectedIndicesRef.current.size === 1) {
-            const [onlyIdx] = Array.from(selectedIndicesRef.current) as number[];
-            const s = strokesRef.current[onlyIdx];
-            setSelectedImageIndex(s?.tool === 'image' ? onlyIdx : null);
-        } else {
-            setSelectedImageIndex(null);
+        if (onShapeSelect) {
+            if (selectedIndicesRef.current.size === 1) {
+                const [onlyIdx] = Array.from(selectedIndicesRef.current) as number[];
+                const s = strokesRef.current[onlyIdx];
+                if (s && !s.isLocked && (shapeTools.includes(s.tool) || s.tool === 'image' || s.tool === 'text')) {
+                    onShapeSelect(Math.round(s.width / PIXELS_PER_PERCENT));
+                } else {
+                    onShapeSelect(null);
+                }
+            } else {
+                onShapeSelect(null);
+            }
         }
         selectionStartRef.current = null; selectionCurrentRef.current = null;
         render();
@@ -2407,10 +2412,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
       for (let i = strokesRef.current.length - 1; i >= 0; i--) {
           const s = strokesRef.current[i];
-          if (s.isLocked || s.tool === 'image') continue; // Locked objects and images CANNOT be erased!
+          if (s.isLocked || s.tool === 'image' || shapeTools.includes(s.tool)) continue; // Locked objects, images, and shapes CANNOT be erased!
           let hit = false;
 
-          if (shapeTools.includes(s.tool) || s.tool === 'text') {
+          if (s.tool === 'text') {
               hit = hitTest(p, s);
           } else if (s.tool === 'dotted-line') {
               if (s.points.length === 0) {
@@ -2613,7 +2618,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         const [index] = Array.from(selectedIndicesRef.current) as number[];
         if (typeof index === 'number') {
             const stroke = strokesRef.current[index];
-            if (stroke && (shapeTools.includes(stroke.tool) || stroke.tool === 'image' || stroke.tool === 'text')) {
+            if (stroke && !stroke.isLocked && (shapeTools.includes(stroke.tool) || stroke.tool === 'image' || stroke.tool === 'text')) {
                 const newWidth = shapeSize * PIXELS_PER_PERCENT;
                 if (stroke.width !== newWidth) {
                     const newStrokes = [...strokesRef.current];
@@ -2672,7 +2677,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             strokesRef.current = step.strokes;
             setCodeBlocks(step.codeBlocks || []);
             selectedIndicesRef.current.clear(); 
-            setSelectedImageIndex(null);
             onHistoryChange(historyStepRef.current > 0, true); 
             render();
             setCamTick(t => t + 1);
@@ -2687,7 +2691,6 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             strokesRef.current = step.strokes;
             setCodeBlocks(step.codeBlocks || []);
             selectedIndicesRef.current.clear(); 
-            setSelectedImageIndex(null);
             onHistoryChange(true, historyStepRef.current < historyRef.current.length - 1); 
             render();
             setCamTick(t => t + 1);
@@ -2706,13 +2709,14 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   };
 
   const handleToggleLock = useCallback(() => {
-    if (selectedImageIndex === null) return;
-    const stroke = strokesRef.current[selectedImageIndex];
-    if (!stroke || stroke.tool !== 'image') return;
+    if (selectedIndicesRef.current.size !== 1) return;
+    const [targetIndex] = Array.from(selectedIndicesRef.current) as number[];
+    const stroke = strokesRef.current[targetIndex];
+    if (!stroke || (stroke.tool !== 'image' && !shapeTools.includes(stroke.tool))) return;
     const nextLocked = !stroke.isLocked;
 
     strokesRef.current = strokesRef.current.map((s, idx) => {
-      if (idx === selectedImageIndex) {
+      if (idx === targetIndex) {
         return {
           ...s,
           isLocked: nextLocked,
@@ -2725,12 +2729,15 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     if (nextLocked) {
       isDraggingSelectionRef.current = false;
       isDrawingRef.current = false;
+      if (onShapeSelect) onShapeSelect(null);
+    } else if (onShapeSelect) {
+      onShapeSelect(Math.round(stroke.width / PIXELS_PER_PERCENT));
     }
 
     pushHistory();
     render();
     setCamTick(t => t + 1);
-  }, [selectedImageIndex, render]);
+  }, [render, onShapeSelect]);
 
   const handleRecolorSelection = useCallback((newColor: string) => {
     if (selectedIndicesRef.current.size === 0) return;
@@ -2757,68 +2764,68 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     }
   }, [render]);
 
-  let selectedImageOverlay: {
-    x: number;
-    y: number;
-    isLocked: boolean;
-  } | null = null;
+  const isInteractingWithSelection =
+    isDraggingSelectionRef.current ||
+    isSelectingRef.current ||
+    isRotatingGroupRef.current ||
+    isResizingGroupRef.current ||
+    isRotatingRef.current ||
+    isResizingShapeRef.current;
 
-  if (selectedImageIndex !== null && strokesRef.current[selectedImageIndex]) {
-    const stroke = strokesRef.current[selectedImageIndex];
-    if (stroke && stroke.tool === 'image') {
-      const bounds = getBoundingBox(stroke);
-      const topCenterX = (bounds.minX + bounds.maxX) / 2;
-      const topCenterY = bounds.minY;
-      const screenPos = worldToScreen(topCenterX, topCenterY);
-      // Leave space for rotation knob when unlocked
-      const offsetY = stroke.isLocked ? 12 : Math.max(38, Math.round(36 * (scaleRef.current || 1)));
-      selectedImageOverlay = {
-        x: screenPos.x,
-        y: screenPos.y - offsetY,
-        isLocked: !!stroke.isLocked,
-      };
-    }
-  }
-
-  let selectedColorOverlay: {
+  let selectionOverlay: {
     x: number;
     y: number;
     placeBelow: boolean;
-    activeColor: string | null;
+    lockState: { isLocked: boolean } | null;
+    colorState: { activeColor: string | null } | null;
   } | null = null;
 
-  if (
-    selectedIndicesRef.current.size > 0 &&
-    !isDraggingSelectionRef.current &&
-    !isSelectingRef.current &&
-    !isRotatingGroupRef.current &&
-    !isResizingGroupRef.current &&
-    !isRotatingRef.current &&
-    !isResizingShapeRef.current
-  ) {
+  if (selectedIndicesRef.current.size > 0 && !isInteractingWithSelection) {
+    let lockState: { isLocked: boolean } | null = null;
+    if (selectedIndicesRef.current.size === 1) {
+      const [onlyIdx] = Array.from(selectedIndicesRef.current) as number[];
+      const singleStroke = strokesRef.current[onlyIdx];
+      if (singleStroke && (singleStroke.tool === 'image' || shapeTools.includes(singleStroke.tool))) {
+        lockState = { isLocked: !!singleStroke.isLocked };
+      }
+    }
+
     const colorableSelected = Array.from(selectedIndicesRef.current)
       .map((i: number) => strokesRef.current[i])
       .filter((s): s is Stroke => !!s && s.tool !== 'image' && !s.isLocked);
 
-    if (colorableSelected.length > 0) {
+    let colorState: { activeColor: string | null } | null = null;
+    if (colorableSelected.length > 0 && paletteColors.length > 0) {
+      const uniqueColors = new Set(colorableSelected.map(s => (s.color || '').toLowerCase()));
+      colorState = {
+        activeColor: uniqueColors.size === 1 ? colorableSelected[0].color : null,
+      };
+    }
+
+    if (lockState || colorState) {
       const selBox = getSelectionBounds();
       if (selBox) {
         const topScreen = worldToScreen(selBox.centerX, selBox.minY);
         const bottomScreen = worldToScreen(selBox.centerX, selBox.maxY);
+        const colorPickerH = colorState
+          ? (paletteColors.length <= 6 ? 34 : Math.ceil(paletteColors.length / 5) * 22 + 16)
+          : 0;
+        const lockBtnH = lockState ? 34 : 0;
+        const gapH = lockState && colorState ? 8 : 0;
+        const totalOverlayH = colorPickerH + lockBtnH + gapH;
+
         const topY = topScreen.y - 12;
-        const placeBelow = topY < 96;
+        const placeBelow = topY - totalOverlayH < 16;
         const rawY = placeBelow ? bottomScreen.y + 14 : topY;
         const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1200;
         const clampedX = Math.max(84, Math.min(viewportW - 84, topScreen.x));
 
-        const uniqueColors = new Set(colorableSelected.map(s => (s.color || '').toLowerCase()));
-        const activeColor = uniqueColors.size === 1 ? colorableSelected[0].color : null;
-
-        selectedColorOverlay = {
+        selectionOverlay = {
           x: clampedX,
           y: rawY,
           placeBelow,
-          activeColor,
+          lockState,
+          colorState,
         };
       }
     }
@@ -2924,98 +2931,94 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
 
 
 
-      {/* Floating Lock/Pin button for selected image */}
-      {selectedImageOverlay && (
+      {/* Floating selection controls: Lock/Pin button and/or compact color picker */}
+      {selectionOverlay && (
         <div
-          className="absolute z-30 pointer-events-auto flex items-center justify-center transition-all duration-150 animate-in fade-in zoom-in-95"
-          style={{
-            left: `${selectedImageOverlay.x}px`,
-            top: `${selectedImageOverlay.y}px`,
-            transform: 'translate(-50%, -100%)',
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            onClick={handleToggleLock}
-            title={selectedImageOverlay.isLocked ? 'Открепить объект' : 'Закрепить объект'}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg shadow-lg border transition-all duration-150 cursor-pointer select-none backdrop-blur-md active:scale-95 ${
-              selectedImageOverlay.isLocked
-                ? 'bg-amber-500/15 border-amber-500/40 text-amber-600 dark:text-amber-400 dark:bg-amber-500/20 hover:bg-amber-500/25'
-                : isDarkMode
-                ? 'bg-zinc-800/95 border-zinc-700 text-zinc-200 hover:bg-zinc-700 hover:text-white'
-                : 'bg-white/95 border-slate-200 text-zinc-700 hover:bg-slate-50 hover:text-zinc-950'
-            }`}
-          >
-            {selectedImageOverlay.isLocked ? (
-              <>
-                <Lock className="w-4 h-4 stroke-[2.2]" />
-                <span className="text-xs font-medium">Закреплено</span>
-              </>
-            ) : (
-              <>
-                <Unlock className="w-4 h-4 stroke-[2.2]" />
-                <span className="text-xs font-medium">Закрепить</span>
-              </>
-            )}
-          </button>
-        </div>
-      )}
-
-      {/* Compact rounded color picker bubble above selected stroke(s) */}
-      {selectedColorOverlay && paletteColors.length > 0 && (
-        <div
-          className={`fixed z-30 pointer-events-auto border shadow-lg backdrop-blur-md transition-opacity duration-150 ${
-            paletteColors.length <= 6 ? 'rounded-full px-2.5 py-1.5' : 'rounded-3xl px-2.5 py-2'
-          } ${
-            isDarkMode
-              ? 'bg-[#202024]/95 border-[#323238] shadow-black/50'
-              : 'bg-white/95 border-gray-200 shadow-slate-400/25'
+          className={`fixed z-30 pointer-events-auto flex items-center gap-2 ${
+            selectionOverlay.placeBelow ? 'flex-col-reverse' : 'flex-col'
           }`}
           style={{
-            left: `${selectedColorOverlay.x}px`,
-            top: `${selectedColorOverlay.y}px`,
-            transform: selectedColorOverlay.placeBelow ? 'translate(-50%, 0%)' : 'translate(-50%, -100%)',
+            left: `${selectionOverlay.x}px`,
+            top: `${selectionOverlay.y}px`,
+            transform: selectionOverlay.placeBelow ? 'translate(-50%, 0%)' : 'translate(-50%, -100%)',
           }}
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
-          <div
-            className={
-              paletteColors.length <= 6
-                ? 'flex items-center gap-1.5'
-                : 'grid grid-cols-5 gap-1.5'
-            }
-          >
-            {paletteColors.map((c, idx) => {
-              const isSelected =
-                !!selectedColorOverlay.activeColor &&
-                selectedColorOverlay.activeColor.toLowerCase() === c.toLowerCase();
-              return (
-                <button
-                  key={`${c}-${idx}`}
-                  type="button"
-                  onClick={() => handleRecolorSelection(c)}
-                  className={`w-4 h-4 rounded-full border transition-transform hover:scale-125 active:scale-95 flex items-center justify-center cursor-pointer focus:outline-none ${
-                    isDarkMode ? 'border-zinc-600/80' : 'border-gray-300/90'
-                  }`}
-                  style={{ backgroundColor: c }}
-                  title={c}
-                  aria-label={`Покрасить выделение в ${c}`}
-                >
-                  {isSelected && (
-                    <div
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        isLightColor(c) ? 'bg-black' : 'bg-white'
+          {selectionOverlay.lockState && (
+            <button
+              type="button"
+              onClick={handleToggleLock}
+              title={selectionOverlay.lockState.isLocked ? 'Открепить объект' : 'Закрепить объект'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg shadow-lg border transition-all duration-150 cursor-pointer select-none backdrop-blur-md active:scale-95 ${
+                selectionOverlay.lockState.isLocked
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-600 dark:text-amber-400 dark:bg-amber-500/20 hover:bg-amber-500/25'
+                  : isDarkMode
+                  ? 'bg-zinc-800/95 border-zinc-700 text-zinc-200 hover:bg-zinc-700 hover:text-white'
+                  : 'bg-white/95 border-slate-200 text-zinc-700 hover:bg-slate-50 hover:text-zinc-950'
+              }`}
+            >
+              {selectionOverlay.lockState.isLocked ? (
+                <>
+                  <Lock className="w-4 h-4 stroke-[2.2]" />
+                  <span className="text-xs font-medium">Закреплено</span>
+                </>
+              ) : (
+                <>
+                  <Unlock className="w-4 h-4 stroke-[2.2]" />
+                  <span className="text-xs font-medium">Закрепить</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {selectionOverlay.colorState && (
+            <div
+              className={`border shadow-lg backdrop-blur-md transition-opacity duration-150 ${
+                paletteColors.length <= 6 ? 'rounded-full px-2.5 py-1.5' : 'rounded-3xl px-2.5 py-2'
+              } ${
+                isDarkMode
+                  ? 'bg-[#202024]/95 border-[#323238] shadow-black/50'
+                  : 'bg-white/95 border-gray-200 shadow-slate-400/25'
+              }`}
+            >
+              <div
+                className={
+                  paletteColors.length <= 6
+                    ? 'flex items-center gap-1.5'
+                    : 'grid grid-cols-5 gap-1.5'
+                }
+              >
+                {paletteColors.map((c, idx) => {
+                  const isSelected =
+                    !!selectionOverlay.colorState?.activeColor &&
+                    selectionOverlay.colorState.activeColor.toLowerCase() === c.toLowerCase();
+                  return (
+                    <button
+                      key={`${c}-${idx}`}
+                      type="button"
+                      onClick={() => handleRecolorSelection(c)}
+                      className={`w-4 h-4 rounded-full border transition-transform hover:scale-125 active:scale-95 flex items-center justify-center cursor-pointer focus:outline-none ${
+                        isDarkMode ? 'border-zinc-600/80' : 'border-gray-300/90'
                       }`}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                      style={{ backgroundColor: c }}
+                      title={c}
+                      aria-label={`Покрасить выделение в ${c}`}
+                    >
+                      {isSelected && (
+                        <div
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            isLightColor(c) ? 'bg-black' : 'bg-white'
+                          }`}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
