@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { BRAND_COLORS, ALL_COLORS } from '../constants';
+import React, { useRef, useEffect } from 'react';
+import { DEFAULT_PALETTE, PALETTE_STORAGE_KEY, isLightColor } from '../constants';
 import { Plus, ChevronDown } from 'lucide-react';
 
 interface ColorPickerProps {
@@ -9,23 +9,9 @@ interface ColorPickerProps {
   setStrokeWidth: (width: number) => void;
   isVisible: boolean;
   isDarkMode?: boolean;
+  paletteColors?: string[];
+  setPaletteColors?: React.Dispatch<React.SetStateAction<string[]>>;
 }
-
-const STORAGE_KEY = 'whiteboard_custom_palette';
-
-// The exact 15 colors originally rendered on screen
-const DEFAULT_PALETTE = [...BRAND_COLORS, ...ALL_COLORS].slice(0, 15);
-
-const isLightColor = (hex: string) => {
-  if (['#ffffff', '#e6e6e6', '#fff8b5', '#ffd866', '#ffd166', '#f4a261', '#9bf6ff'].includes(hex.toLowerCase())) return true;
-  if (hex.startsWith('#') && hex.length >= 7) {
-    const r = parseInt(hex.slice(1, 3), 16) || 0;
-    const g = parseInt(hex.slice(3, 5), 16) || 0;
-    const b = parseInt(hex.slice(5, 7), 16) || 0;
-    return (r * 299 + g * 587 + b * 114) / 1000 > 165;
-  }
-  return false;
-};
 
 const ColorPicker: React.FC<ColorPickerProps> = ({ 
   color, 
@@ -33,18 +19,19 @@ const ColorPicker: React.FC<ColorPickerProps> = ({
   strokeWidth, 
   setStrokeWidth,
   isVisible,
-  isDarkMode = false
+  isDarkMode = false,
+  paletteColors,
+  setPaletteColors
 }) => {
-  const [colors, setColors] = useState<string[]>(() => {
+  const [localColors, setLocalColors] = React.useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(PALETTE_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const unique = Array.from(new Set(parsed.map((c: string) => c.toUpperCase())));
-          // If corrupted by intermediate dragging bug, reset to clean default palette
           if (unique.length > 18) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_PALETTE));
+            localStorage.setItem(PALETTE_STORAGE_KEY, JSON.stringify(DEFAULT_PALETTE));
             return DEFAULT_PALETTE;
           }
           return unique;
@@ -56,11 +43,14 @@ const ColorPicker: React.FC<ColorPickerProps> = ({
     return DEFAULT_PALETTE;
   });
 
+  const colors = paletteColors ?? localColors;
+  const updateColors = setPaletteColors ?? setLocalColors;
+
   const colorInputRef = useRef<HTMLInputElement>(null);
 
   const saveColors = (updated: string[]) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      localStorage.setItem(PALETTE_STORAGE_KEY, JSON.stringify(updated));
     } catch {
       // ignore
     }
@@ -76,7 +66,7 @@ const ColorPicker: React.FC<ColorPickerProps> = ({
       const target = e.target as HTMLInputElement;
       const finalColor = target.value.toUpperCase();
       if (finalColor) {
-        setColors(prev => {
+        updateColors(prev => {
           if (!prev.some(c => c.toUpperCase() === finalColor)) {
             const next = [...prev, finalColor];
             saveColors(next);
@@ -92,12 +82,12 @@ const ColorPicker: React.FC<ColorPickerProps> = ({
     return () => {
       inputEl.removeEventListener('change', handleNativeChange);
     };
-  }, [setColor]);
+  }, [setColor, updateColors]);
 
   const handleDeleteColor = (e: React.MouseEvent, indexToDelete: number) => {
     e.preventDefault();
     e.stopPropagation();
-    setColors(prev => {
+    updateColors(prev => {
       const colorToDelete = prev[indexToDelete];
       const updated = prev.filter((_, i) => i !== indexToDelete);
       saveColors(updated);

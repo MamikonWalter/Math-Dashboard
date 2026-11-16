@@ -9,7 +9,7 @@ import ThreeDShapesPanel from './components/ThreeDShapesPanel';
 import ZoomControls from './components/ZoomControls';
 import AIAssistant from './components/AIAssistant';
 import { ToolType, WhiteboardHandle } from './types';
-import { DEFAULT_STROKE_WIDTH, DEFAULT_ERASER_WIDTH, DEFAULT_SHAPE_SIZE } from './constants';
+import { DEFAULT_STROKE_WIDTH, DEFAULT_ERASER_WIDTH, DEFAULT_SHAPE_SIZE, DEFAULT_PALETTE, PALETTE_STORAGE_KEY } from './constants';
 import { GoogleGenAI } from "@google/genai";
 import { jsPDF } from "jspdf";
 import { saveLocalBoardState, loadLocalBoardState, clearLocalBoardState } from './utils/storage';
@@ -44,6 +44,23 @@ const App: React.FC = () => {
   const [showGrid, setShowGrid] = useState(false);
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(true);
   const [is3DPanelOpen, setIs3DPanelOpen] = useState(false);
+  const [paletteColors, setPaletteColors] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(PALETTE_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const unique = Array.from(new Set(parsed.map((c: string) => c.toUpperCase())));
+          if (unique.length > 18) {
+            localStorage.setItem(PALETTE_STORAGE_KEY, JSON.stringify(DEFAULT_PALETTE));
+            return DEFAULT_PALETTE;
+          }
+          return unique;
+        }
+      }
+    } catch {}
+    return DEFAULT_PALETTE;
+  });
 
   const handleToggleDarkMode = useCallback(() => {
     setIsDarkMode(prev => {
@@ -522,6 +539,8 @@ const App: React.FC = () => {
         strokeWidth={strokeWidth} 
         setStrokeWidth={setStrokeWidth} 
         isDarkMode={isDarkMode}
+        paletteColors={paletteColors}
+        setPaletteColors={setPaletteColors}
       />
       <EraserProperties 
         isVisible={isUIVisible && currentTool === 'eraser'} 
@@ -570,6 +589,7 @@ const App: React.FC = () => {
         shapeSize={shapeSize} 
         showGrid={showGrid} 
         isDarkMode={isDarkMode}
+        paletteColors={paletteColors}
         onHistoryChange={handleHistoryChange} 
         triggerUndo={undoTrigger} 
         triggerRedo={redoTrigger} 

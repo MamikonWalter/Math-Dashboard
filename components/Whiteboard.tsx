@@ -2,7 +2,7 @@
 import React, { useRef, useEffect, useCallback, useImperativeHandle, forwardRef, useState } from 'react';
 import { Lock, Unlock } from 'lucide-react';
 import { ToolType, Point, Stroke, WhiteboardHandle, WhiteboardData, CodeBlockItem } from '../types';
-import { PIXELS_PER_PERCENT } from '../constants';
+import { PIXELS_PER_PERCENT, DEFAULT_PALETTE, isLightColor } from '../constants';
 import PythonCodeBlock from './PythonCodeBlock';
 
 interface WhiteboardProps {
@@ -13,6 +13,7 @@ interface WhiteboardProps {
   shapeSize: number;
   showGrid: boolean;
   isDarkMode?: boolean;
+  paletteColors?: string[];
   onHistoryChange: (canUndo: boolean, canRedo: boolean) => void;
   triggerUndo: number;
   triggerRedo: number;
@@ -102,6 +103,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
   shapeSize,
   showGrid,
   isDarkMode = false,
+  paletteColors = DEFAULT_PALETTE,
   onHistoryChange,
   triggerUndo,
   triggerRedo,
@@ -860,6 +862,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         selectedIndicesRef.current.clear();
         onHistoryChange(false, false);
         render();
+        setCamTick(t => t + 1);
       }
     },
     loadBoardState: (strokes: Stroke[], blocks: CodeBlockItem[]) => {
@@ -888,6 +891,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       selectedIndicesRef.current.clear();
       onHistoryChange(false, false);
       render();
+      setCamTick(t => t + 1);
     },
     loadRoomState: (strokes: Stroke[], blocks: CodeBlockItem[]) => {
       const nextStrokes = (Array.isArray(strokes) ? strokes : []).map(s => ({
@@ -915,6 +919,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       selectedIndicesRef.current.clear();
       onHistoryChange(false, false);
       render();
+      setCamTick(t => t + 1);
     },
     clearBoard: () => {
       strokesRef.current = [];
@@ -926,6 +931,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       historyStepRef.current = 0;
       onHistoryChange(false, false);
       render();
+      setCamTick(t => t + 1);
     },
     setZoom: (targetScale: number) => {
         const constrainedScale = Math.max(0.01, Math.min(targetScale, 4));
@@ -991,6 +997,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             pushHistory();
             render();
         }
+        setCamTick(t => t + 1);
     },
     copySelection: (): boolean => {
         if (selectedIndicesRef.current.size === 0) return false;
@@ -1711,6 +1718,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                         }))
                     };
                     render();
+                    setCamTick(t => t + 1);
                     return;
                 }
 
@@ -1741,6 +1749,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                         }))
                     };
                     render();
+                    setCamTick(t => t + 1);
                     return;
                 }
             }
@@ -1772,6 +1781,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
                 lastMousePosRef.current = coords;
                 onDrawStart();
                 render();
+                setCamTick(t => t + 1);
                 return;
             }
         }
@@ -1822,6 +1832,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             lastMousePosRef.current = coords;
             onDrawStart();
             render();
+            setCamTick(t => t + 1);
         } else {
             // Clicked empty canvas: deselect and start marquee selection
             selectedIndicesRef.current.clear();
@@ -1831,6 +1842,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             selectionStartRef.current = worldPos;
             selectionCurrentRef.current = worldPos;
             render();
+            setCamTick(t => t + 1);
         }
         return;
     }
@@ -1853,6 +1865,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         if (onSelectTool) onSelectTool('cursor');
         pushHistory();
         render();
+        setCamTick(t => t + 1);
         return; 
     }
 
@@ -1869,6 +1882,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
       updatedAt: Date.now()
     };
     render();
+    setCamTick(t => t + 1);
   };
 
   const move = (e: React.MouseEvent | React.TouchEvent) => {
@@ -2198,6 +2212,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         isRotatingGroupRef.current = null;
         pushHistory();
         render();
+        setCamTick(t => t + 1);
         return;
     }
     if (isResizingGroupRef.current) {
@@ -2207,6 +2222,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         isResizingGroupRef.current = null;
         pushHistory();
         render();
+        setCamTick(t => t + 1);
         return;
     }
     if (isRotatingRef.current) {
@@ -2217,6 +2233,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         isRotatingRef.current = null;
         pushHistory();
         render();
+        setCamTick(t => t + 1);
         return;
     }
     if (isResizingShapeRef.current) {
@@ -2227,6 +2244,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         isResizingShapeRef.current = null;
         pushHistory();
         render();
+        setCamTick(t => t + 1);
         return;
     }
 
@@ -2255,7 +2273,9 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             setSelectedImageIndex(null);
         }
         selectionStartRef.current = null; selectionCurrentRef.current = null;
-        render(); return;
+        render();
+        setCamTick(t => t + 1);
+        return;
     }
     if (tool === 'cursor' && isDraggingSelectionRef.current) {
         isDraggingSelectionRef.current = false;
@@ -2266,6 +2286,7 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         });
         pushHistory();
         render();
+        setCamTick(t => t + 1);
         return;
     }
     if (isDrawingRef.current && currentStrokeRef.current) {
@@ -2651,8 +2672,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             strokesRef.current = step.strokes;
             setCodeBlocks(step.codeBlocks || []);
             selectedIndicesRef.current.clear(); 
+            setSelectedImageIndex(null);
             onHistoryChange(historyStepRef.current > 0, true); 
             render();
+            setCamTick(t => t + 1);
             if (onStrokesChanged) onStrokesChanged(step.strokes);
         }
     }
@@ -2664,8 +2687,10 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
             strokesRef.current = step.strokes;
             setCodeBlocks(step.codeBlocks || []);
             selectedIndicesRef.current.clear(); 
+            setSelectedImageIndex(null);
             onHistoryChange(true, historyStepRef.current < historyRef.current.length - 1); 
             render();
+            setCamTick(t => t + 1);
             if (onStrokesChanged) onStrokesChanged(step.strokes);
         }
     }
@@ -2707,6 +2732,31 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
     setCamTick(t => t + 1);
   }, [selectedImageIndex, render]);
 
+  const handleRecolorSelection = useCallback((newColor: string) => {
+    if (selectedIndicesRef.current.size === 0) return;
+    let changed = false;
+    const nextStrokes = strokesRef.current.map((s, idx) => {
+      if (selectedIndicesRef.current.has(idx) && s.tool !== 'image' && !s.isLocked) {
+        if ((s.color || '').toLowerCase() !== newColor.toLowerCase()) {
+          changed = true;
+        }
+        return {
+          ...s,
+          color: newColor,
+          updatedAt: Date.now(),
+        };
+      }
+      return s;
+    });
+
+    if (changed) {
+      strokesRef.current = nextStrokes;
+      pushHistory(nextStrokes);
+      render();
+      setCamTick(t => t + 1);
+    }
+  }, [render]);
+
   let selectedImageOverlay: {
     x: number;
     y: number;
@@ -2727,6 +2777,50 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
         y: screenPos.y - offsetY,
         isLocked: !!stroke.isLocked,
       };
+    }
+  }
+
+  let selectedColorOverlay: {
+    x: number;
+    y: number;
+    placeBelow: boolean;
+    activeColor: string | null;
+  } | null = null;
+
+  if (
+    selectedIndicesRef.current.size > 0 &&
+    !isDraggingSelectionRef.current &&
+    !isSelectingRef.current &&
+    !isRotatingGroupRef.current &&
+    !isResizingGroupRef.current &&
+    !isRotatingRef.current &&
+    !isResizingShapeRef.current
+  ) {
+    const colorableSelected = Array.from(selectedIndicesRef.current)
+      .map((i: number) => strokesRef.current[i])
+      .filter((s): s is Stroke => !!s && s.tool !== 'image' && !s.isLocked);
+
+    if (colorableSelected.length > 0) {
+      const selBox = getSelectionBounds();
+      if (selBox) {
+        const topScreen = worldToScreen(selBox.centerX, selBox.minY);
+        const bottomScreen = worldToScreen(selBox.centerX, selBox.maxY);
+        const topY = topScreen.y - 12;
+        const placeBelow = topY < 96;
+        const rawY = placeBelow ? bottomScreen.y + 14 : topY;
+        const viewportW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+        const clampedX = Math.max(84, Math.min(viewportW - 84, topScreen.x));
+
+        const uniqueColors = new Set(colorableSelected.map(s => (s.color || '').toLowerCase()));
+        const activeColor = uniqueColors.size === 1 ? colorableSelected[0].color : null;
+
+        selectedColorOverlay = {
+          x: clampedX,
+          y: rawY,
+          placeBelow,
+          activeColor,
+        };
+      }
     }
   }
 
@@ -2866,6 +2960,62 @@ const Whiteboard = forwardRef<WhiteboardHandle, WhiteboardProps>(({
               </>
             )}
           </button>
+        </div>
+      )}
+
+      {/* Compact rounded color picker bubble above selected stroke(s) */}
+      {selectedColorOverlay && paletteColors.length > 0 && (
+        <div
+          className={`fixed z-30 pointer-events-auto border shadow-lg backdrop-blur-md transition-opacity duration-150 ${
+            paletteColors.length <= 6 ? 'rounded-full px-2.5 py-1.5' : 'rounded-3xl px-2.5 py-2'
+          } ${
+            isDarkMode
+              ? 'bg-[#202024]/95 border-[#323238] shadow-black/50'
+              : 'bg-white/95 border-gray-200 shadow-slate-400/25'
+          }`}
+          style={{
+            left: `${selectedColorOverlay.x}px`,
+            top: `${selectedColorOverlay.y}px`,
+            transform: selectedColorOverlay.placeBelow ? 'translate(-50%, 0%)' : 'translate(-50%, -100%)',
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className={
+              paletteColors.length <= 6
+                ? 'flex items-center gap-1.5'
+                : 'grid grid-cols-5 gap-1.5'
+            }
+          >
+            {paletteColors.map((c, idx) => {
+              const isSelected =
+                !!selectedColorOverlay.activeColor &&
+                selectedColorOverlay.activeColor.toLowerCase() === c.toLowerCase();
+              return (
+                <button
+                  key={`${c}-${idx}`}
+                  type="button"
+                  onClick={() => handleRecolorSelection(c)}
+                  className={`w-4 h-4 rounded-full border transition-transform hover:scale-125 active:scale-95 flex items-center justify-center cursor-pointer focus:outline-none ${
+                    isDarkMode ? 'border-zinc-600/80' : 'border-gray-300/90'
+                  }`}
+                  style={{ backgroundColor: c }}
+                  title={c}
+                  aria-label={`Покрасить выделение в ${c}`}
+                >
+                  {isSelected && (
+                    <div
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isLightColor(c) ? 'bg-black' : 'bg-white'
+                      }`}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
